@@ -1,0 +1,549 @@
+---
+title: "Health Data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(stringr)
+setwd("/Users/chanamessinger/Dropbox/Columbia/Data Viz/Final Project/group_c_nyc_restaurants")
+library(plotly)
+library(RColorBrewer)
+library(devtools)
+devtools::install_github("kassambara/ggpubr")
+library(ggpubr)
+library(rgdal)
+```
+To do:
+
+Areas with highest mean grades correlate with higher health score
+Bad scores in poor areas
+
+ - proportion of bad scoring restaurants
+ - Look for more opportunities for interactivity
+ - Look for chains
+      - dot map of chains by score or grade (interactive)
+      - choloropleth of dunkin vs starbucks
+      - fast food period
+      - amount of fast food (vs salads)
+- hamburger, pizza, salad
+
+change palette/general styling
+do tables of similar things
+
+
+```{r Data Cleaning}
+DOH <- read_csv("raw_data/DOHMH_New_York_City_Restaurant_Inspection_Results.csv")
+
+DOH_clean <- DOH %>%
+  filter(is.na(`INSPECTION TYPE`) == F) %>%
+  mutate(`VIOLATION CODE` = case_when(
+    is.na(`VIOLATION CODE`) ~ "NV",
+    TRUE ~ as.character(`VIOLATION CODE`)
+    )
+  )
+
+# DOH_addresses <- DOH_clean %>%
+#   mutate(ADDRESS = paste(BUILDING, STREET, BORO, sep = " ")) %>%
+#   group_by(CAMIS) %>%
+#   filter(row_number() == min(row_number())) %>%
+#   mutate_geocode(ADDRESS)
+```
+
+```{r Violations and Inspections and Reinspections and Basic Info}
+restaurant_info <- DOH_clean %>%
+  mutate(reinspection = str_detect(`INSPECTION TYPE`, "Re")) %>%
+  group_by(CAMIS, DBA, ZIPCODE, `CUISINE DESCRIPTION`) %>%
+  dplyr::summarize(reinspections = sum(reinspection), checks = n(), violations = sum(!is.na(`VIOLATION DESCRIPTION`)), score = sum(SCORE, na.rm = T), inspections = length(unique(`INSPECTION DATE`))) %>%
+  ungroup()
+```
+
+```{r Violations and Inspections and Reinspections and Basic Info for Zip}
+info_by_zip <- restaurant_info %>%
+  mutate(ZIPCODE = as.character(ZIPCODE)) %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(number = n(), reinspections = sum(reinspections), inspection_total = sum(inspections), violation_total = sum(violations), check_total = sum(checks), score_total = sum(score)) %>%
+  ungroup()
+```
+
+
+```{r}
+simplify_cuisine <- function(data){
+  simplified <- data %>%
+    mutate(CUISINE_SIMPLE = case_when(
+      `CUISINE DESCRIPTION` %in% c("Creole", "Cajun") ~ "Creole/Cajun",
+      `CUISINE DESCRIPTION` %in% c("Czech", "Polish", "Russian") ~ "Eastern European",
+      `CUISINE DESCRIPTION` %in% c("Donuts", "Bagels/Pretzels") ~ "Bakery",
+      `CUISINE DESCRIPTION` %in% c("Tex-Mex", "Californian") ~ "Ameri-Mex",
+      `CUISINE DESCRIPTION` %in% c("Hotdogs") ~ "Hotdogs/Pretzels",
+      `CUISINE DESCRIPTION` %in% c("Bangladeshi", "Indian") ~ "Bangladeshi/Indian",
+      `CUISINE DESCRIPTION` %in% c("Tapas") ~ "Spanish",
+      str_detect(`CUISINE DESCRIPTION`, "Soup|Sandwich") ~ "Soups/Sandwiches",
+      str_detect(`CUISINE DESCRIPTION`, "Ice Cream") ~ "Ice Cream",
+      str_detect(`CUISINE DESCRIPTION`, "Coffee") ~ "Cafe",
+      str_detect(`CUISINE DESCRIPTION`, "beverage") ~ "Beverages",
+      str_detect(`CUISINE DESCRIPTION`, "Latin") ~ "Latin",
+      TRUE ~ `CUISINE DESCRIPTION`
+      ))
+  
+  return(simplified)
+}
+
+
+unique(DOH_clean[str_detect(DOH_clean$DBA, "99"),c(2,8)])
+```
+
+```{r Violations and Inspections and Reinspections and Basic Info for Cuisine}
+info_by_cuisine <- restaurant_info %>%
+  group_by(`CUISINE DESCRIPTION`) %>%
+  dplyr::summarize(number = n(), reinspections = sum(reinspections), inspection_total = sum(inspections), violation_total = sum(violations), check_total = sum(checks), score_total = sum(score)) %>%
+  ungroup()
+
+info_by_cuisine_simplified <- simplify_cuisine(info_by_cuisine) %>%
+    group_by(CUISINE_SIMPLE) %>%
+    dplyr::summarize(number = sum(number), inspection_total = sum(inspection_total), violation_total = sum(violation_total), check_total = sum(check_total), score_total = sum(score_total)) %>%
+    filter((CUISINE_SIMPLE %in% c("Not Listed/Not Applicable", "Other")) == F)
+```
+
+```{r Info By Cuisine}
+info_by_cuisine_simplified <- info_by_cuisine_simplified %>%
+  mutate(violations_per_inspection = violation_total/inspection_total) %>%
+  mutate(scoreperinspection = score_total/inspection_total)
+
+info_by_cuisine <- info_by_cuisine %>%
+  mutate(violations_per_inspection = violation_total/inspection_total) %>%
+  mutate(scoreperinspection = score_total/inspection_total)
+```
+
+
+```{r Grade and most recent grade}
+most_recent_grade <- DOH_clean %>%
+  filter(is.na(GRADE) == FALSE) %>%
+  filter(GRADE %in% c("A", "B", "C")) %>%
+  filter("GRADE DATE" == min("GRADE DATE")) %>%
+  mutate(GRADENUM = case_when(
+    GRADE == "A" ~ 3,
+    GRADE == "B" ~ 2,
+    GRADE == "C" ~ 1
+    )
+  )
+
+grade <- DOH_clean %>%
+  filter(is.na(GRADE) == FALSE) %>%
+  filter(GRADE %in% c("A", "B", "C")) %>%
+  mutate(GRADENUM = case_when(
+    GRADE == "A" ~ 3,
+    GRADE == "B" ~ 2,
+    GRADE == "C" ~ 1
+    )
+  ) %>%
+  select(-PHONE)
+
+most_recent_grade <- grade %>%
+  group_by(CAMIS, DBA, ZIPCODE) %>%
+  filter(row_number() == min(row_number())) %>%
+  ungroup() %>%
+  select(-ACTION, -`VIOLATION CODE`, - `VIOLATION DESCRIPTION`, -`CRITICAL FLAG`, -`RECORD DATE`, -`INSPECTION TYPE`, -`INSPECTION DATE`, `GRADE DATE`)
+
+average_grade <- grade %>%
+  group_by(CAMIS, DBA, ZIPCODE, `CUISINE DESCRIPTION`) %>%
+  dplyr::summarize(average_grade = mean(GRADENUM)) %>%
+  ungroup()
+
+
+```
+
+```{r Average Grade by Zip}
+average_grade_by_zip <- most_recent_grade %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(average_grade = mean(GRADENUM)) %>%
+  ungroup() %>%
+  mutate(ZIPCODE = as.character(ZIPCODE))
+
+average_average_grade_by_zip <- average_grade %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(average_average_grade = mean(average_grade)) %>%
+  ungroup() %>%
+  mutate(ZIPCODE = as.character(ZIPCODE))
+
+info_by_zip <- inner_join(info_by_zip, average_grade_by_zip, by = "ZIPCODE", type = "full")
+info_by_zip <- inner_join(info_by_zip, average_average_grade_by_zip, by = "ZIPCODE", type = "full")
+
+zip_demographics <- read_csv("Demographics/nyc_zip_demographics.csv") %>%
+  mutate(ZIPCODE = as.character(ZIPCODE))
+
+info_by_zip <- inner_join(info_by_zip, zip_demographics, by = "ZIPCODE", type = "full")
+```
+
+```{r Chains}
+restaurant_info <- inner_join(restaurant_info, average_grade, by = c("CAMIS", "DBA", "ZIPCODE", "CUISINE DESCRIPTION"), type = "full")
+
+restaurant_info <- inner_join(restaurant_info, most_recent_grade, by = c("CAMIS", "DBA", "ZIPCODE", "CUISINE DESCRIPTION"), type = "full")
+
+chains <- restaurant_info %>%
+  group_by(DBA) %>%
+  dplyr::summarize(num = n()) %>%
+  filter(num>1) %>%
+  mutate(NAME = case_when(
+      str_detect(DBA, "DUNKIN") ~ "DUNKIN DONUTS",
+      str_detect(DBA, "DOMINO") ~ "DOMINOS",
+      str_detect(DBA, "MCDONALD") ~ "MCDONALDS",
+      str_detect(DBA, "STARBUCKS") ~ "STARBUCKS",
+      str_detect(DBA, "CHIPOTLE") ~ "CHIPOTLE",
+      TRUE ~ DBA
+      )) %>%
+  group_by(NAME) %>%
+  dplyr::summarize(num = sum(num))
+
+coffee_compare <- restaurant_info %>%
+  mutate(NAME = case_when(
+      str_detect(DBA, "DUNKIN") ~ "DUNKIN DONUTS",
+      str_detect(DBA, "STARBUCKS") ~ "STARBUCKS",
+      TRUE ~ DBA
+      )) %>%
+  filter(NAME %in% c("DUNKIN DONUTS","STARBUCKS")) %>%
+  mutate(ADDRESS = paste(BUILDING, STREET, BORO, sep = " ")) %>%
+  mutate_geocode(ADDRESS)
+
+coffee_compare <- save_as_csv(coffee_compare, "coffee_compare")
+
+starbucks <- coffee_compare %>%
+  filter(NAME == "STARBUCKS")
+
+
+content1 <- paste("Restaurant:",coffee_compare$NAME,"<br/>")
+
+content <- paste("Current Grade:",starbucks$GRADE,"<br/>",
+                 "Average Grade:",starbucks$average_grade,"<br/>",
+                 "Average Score per Inspection:",round(starbucks$score/starbucks$inspections,3),"<br/>")
+
+pal1 = colorNumeric(c("#90E296", "#005100"), domain = (starbucks$score/starbucks$inspections))
+
+pal <- colorFactor(palette = c("hot pink", "dark green"), 
+               levels = c("DUNKIN DONUTS", "STARBUCKS"))
+
+leaflet(data = coffee_compare) %>% 
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite) %>% 
+  addCircles(col = ~pal(as.factor(NAME)), opacity = 0.9, popup = content1) %>% 
+  setView(lng = -73.958701, 40.787435, zoom = 13) %>% 
+  addMiniMap()
+
+leaflet(data = starbucks) %>% 
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite) %>% 
+  addCircles(col = ~pal1(score/inspections), opacity = 1, popup = content, radius = 13) %>% 
+  setView(lng = -73.958701, 40.787435, zoom = 12) %>% 
+  addLegend(pal = pal1, values = ~score/inspections) %>% 
+  addMiniMap() 
+
+  addPolygons(data = m, fill = FALSE) %>% 
+    
+```
+
+
+LAYERS? SOMETHING IS WRONG HERE. COMBINE!!
+```{r McDonalds}
+mcdonalds <- restaurant_info %>%
+  mutate(NAME = case_when(
+    str_detect(DBA, "MCDONALD") ~ "MCDONALDS",
+    TRUE ~ DBA
+    )) %>%
+  filter(NAME == "MCDONALDS") %>%
+  mutate(ADDRESS = paste(BUILDING, STREET, BORO, sep = " ")) %>%
+  mutate_geocode(ADDRESS)
+
+mcdonalds <- save_as_csv(mcdonalds, "mcdonalds")
+
+mcdonalds <- 
+
+
+mcdonalds <- mcdonalds %>%
+  mutate(scoreperinspect = score/inspections)
+
+content_m <- paste("Current Grade:",mcdonalds$GRADE,"<br/>",
+                 "Average Grade:",mcdonalds$average_grade,"<br/>",
+                 "Average Score per Inspection:",round(mcdonalds$scoreperinspect,3))
+
+
+pal_m = colorNumeric(c("#F0FF33", "#FF0028"), domain = (mcdonalds$scoreperinspect))
+
+
+leaflet(data = mcdonalds) %>% 
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite) %>% 
+  addCircles(col = ~pal_m(scoreperinspect), opacity = 1, popup = content, radius = 13) %>% 
+  setView(lng = -73.958701, 40.787435, zoom = 12) %>% 
+  addLegend(pal = pal_m, values = ~scoreperinspect) %>% 
+  addMiniMap() 
+
+```
+
+```{r McD and Starbucks}
+leaflet() %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addCircles(data = mcdonalds, col = ~pal_m(scoreperinspect), opacity = 1, popup = content, radius = 13, group = "McDonalds") %>% 
+  addCircles(data = starbucks, col = ~pal1(score/inspections), opacity = 1, popup = content, radius = 13, group = "Starbucks") %>% 
+  addLegend(pal = pal_m, values = mcdonalds$scoreperinspect, group = "McDonalds", title = "Score Per Inspection (McDonalds)", bins= 5) %>% 
+  addLegend(pal = pal1, values = starbucks$score/starbucks$inspections, group = "Starbucks", title = "Score Per Inspection (Starbucks)", bins= 5) %>% 
+  setView(lng = -73.958701, 40.787435, zoom = 12) %>% 
+  addLayersControl(
+    overlayGroups = c("McDonalds", "Starbucks"),
+    options = layersControlOptions(collapsed = F)
+  )
+```
+
+
+
+```{r Cuisines in each Zip}
+restaurant_info_s <- simplify_cuisine(restaurant_info)
+
+cuisines_by_zip_s <- restaurant_info_s %>%
+  mutate(ZIPCODE = as.character(ZIPCODE)) %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(burgers = sum(CUISINE_SIMPLE == "Hamburgers"), pizza = sum(str_detect(CUISINE_SIMPLE, "Pizza")), salad = sum(CUISINE_SIMPLE == "Salads")) %>%
+  ungroup()
+
+cuisines_by_zip_s <- inner_join(cuisines_by_zip_s, zip_demographics, by = "ZIPCODE")
+cuisines_by_zip_s <- inner_join(cuisines_by_zip_s, select(info_by_zip, ZIPCODE, number), by = "ZIPCODE")
+
+
+cuisines_by_zip_s_mapper <- cuisines_by_zip_s %>%
+  filter(is.na(TotalPop) == F) %>%
+  mutate(burgvssalad = burgers - salad) %>%
+  mutate(pplperpizza = TotalPop/pizza)
+
+
+pizza <- restaurant_info_s %>%
+  mutate(ZIPCODE = as.factor(ZIPCODE)) %>%
+  filter(str_detect(CUISINE_SIMPLE, "Pizza")) %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(pizza_grade = mean(GRADENUM, na.rm = T)) %>%
+  ungroup()
+
+coffee_compare_chloro <- coffee_compare %>%
+  mutate(ZIPCODE = as.factor(ZIPCODE)) %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(Starbucks = sum(NAME == "STARBUCKS"), `Dunkin Donuts` = sum(NAME == "DUNKIN DONUTS")) %>%
+  inner_join(select(info_by_zip, ZIPCODE, number), by = "ZIPCODE") %>%
+  mutate(starvsdunk = (Starbucks - `Dunkin Donuts`)) %>%
+  mutate(more = as.factor(case_when(
+         Starbucks > `Dunkin Donuts` ~ "Starbucks",
+         Starbucks < `Dunkin Donuts` ~ "Dunkin Donuts",
+         Starbucks == `Dunkin Donuts` ~ "Equal",
+))) %>%
+  mutate(equal = (Starbucks == `Dunkin Donuts`))
+
+```
+
+```{r Maps for Cuisines in Zip}
+create_map(coffee_compare_chloro) + tm_fill("starvsdunk", palette = "PiYG", title = "How Many More Starbucks \n than Dunkin Donuts")
+
+create_map(coffee_compare_chloro) + tm_fill("more", palette = c("#FF80D8", "#FFFFFF", "#3A790F"), title = "Which is More Common: Starbucks vs Dunkin Donuts")
+
+pal2 = colorNumeric(c("#FFBD7F", "#000000", "#00C024"), domain = cuisines_by_zip_s_mapper$burgvssalad)
+
+create_map(cuisines_by_zip_s_mapper) + tm_fill("burgvssalad", palette = "-BrBG")
+
+p1 <- create_map(cuisines_by_zip_s_mapper) + tm_fill("pplperpizza", palette = "YlOrRd", title = "People per Pizza Restaurant")
+
+p2 <- create_map(cuisines_by_zip_s_mapper) + tm_fill("pizza", palette = "YlOrRd", title = "Number of Pizza Restaurants")
+
+p3 <- create_map(pizza) + tm_fill("pizza_grade", palette = "Blues", title = "Average Grade of Pizza Restaurants", breaks = c(2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0))
+
+
+tmap_arrange(p2, p1, p3, ncol = 2)
+```
+
+
+
+```{r Grades of Full Cuisine}
+average_grade_by_cuisine <- average_grade %>%
+  group_by(`CUISINE DESCRIPTION`) %>%
+  dplyr::summarize(average_grade = mean(average_grade))
+
+info_by_cuisine <- inner_join(info_by_cuisine, average_grade_by_cuisine, by = "CUISINE DESCRIPTION", type = "full", match = "all")
+
+info_by_cuisine <- info_by_cuisine %>%
+  filter(is.na(number) == F)
+```
+
+```{r Suspiciously Similar Cuisines}
+eastern_european <- info_by_cuisine %>%
+  filter(`CUISINE DESCRIPTION` %in% c("Eastern European", "Czech", "Polish", "Russian"))
+
+analysis <- function(data, name = "Group"){
+  plot1 <- ggplot(data, aes(x = reorder(`CUISINE DESCRIPTION`, inspection_total/number), y = inspection_total/number)) + geom_bar(stat = "identity", fill = "blue") + ggtitle(paste0(name, ": Inspections per Restaurant")) + xlab("Cuisine") + ylab("Inspections per Restaurant") + scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+  
+  plot2 <- ggplot(data, aes(x = reorder(`CUISINE DESCRIPTION`, violations_per_inspection), y = violations_per_inspection)) + geom_bar(stat = "identity", fill = "blue") + ggtitle(paste0(name, ": Violations per Inspection")) + xlab("Cuisine") + ylab("Violations per Inspection") + scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+ 
+  list(plot1, plot2) 
+}
+
+analysis(eastern_european, "Eastern European")
+
+spanish <- info_by_cuisine %>%
+  filter(`CUISINE DESCRIPTION` %in% c("Spanish", "Tapas"))
+
+analysis(spanish, "Spanish")
+
+indian <- info_by_cuisine %>%
+  filter(`CUISINE DESCRIPTION` %in% c("Bangladeshi", "Indian"))
+
+analysis(indian, "South Asian")
+
+```
+
+
+
+```{r Grades of Simple Cuisine}
+grade_simple_cuisine <- simplify_cuisine(grade)
+
+
+average_grade_s <- grade_simple_cuisine %>%
+  group_by(CAMIS, DBA, ZIPCODE, CUISINE_SIMPLE) %>%
+  dplyr::summarize(average_grade = mean(GRADENUM)) %>%
+  ungroup()
+
+average_grade_by_cuisine_s <- average_grade_s %>%
+  group_by(CUISINE_SIMPLE) %>%
+  dplyr::summarize(average_grade = mean(average_grade))
+
+average_grade <- grade %>%
+  group_by(CAMIS, DBA, ZIPCODE, `CUISINE DESCRIPTION`) %>%
+  dplyr::summarize(average_grade = mean(GRADENUM)) %>%
+  ungroup()
+
+average_grade_by_cuisine <- average_grade %>%
+  group_by(`CUISINE DESCRIPTION`) %>%
+  dplyr::summarize(average_grade = mean(average_grade))
+
+info_by_cuisine_simplified <- inner_join(info_by_cuisine_simplified, average_grade_by_cuisine_s, by = "CUISINE_SIMPLE", type = "full", match = "all")
+
+info_by_cuisine_simplified <- info_by_cuisine_simplified %>%
+  filter(is.na(number) == F)
+```
+
+```{r Bar Graphs by Cuisine Number}
+
+ggplot(data = info_by_cuisine_simplified, aes(x = reorder(CUISINE_SIMPLE, -number), y = number)) + 
+  geom_bar(stat = "identity", fill = "#43a2ca", width = .9) + 
+  ggtitle("Number of Restaurants in Each Cuisine") + 
+  xlab("Cuisine") + ylab("Number") + 
+  theme(axis.text.x=element_text(angle=45,hjust=1), ) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+
+ggplot(data = top_n(info_by_cuisine_simplified, 10, wt = number), aes(x = reorder(CUISINE_SIMPLE, -number), y = number)) +
+  geom_bar(stat = "identity", fill = "#43a2ca") + 
+  ggtitle("Largest Number of Restaurants by Cuisine") + 
+  xlab("Cuisine") + ylab("Number") +
+  theme(axis.text.x=element_text(angle=45,hjust=1)) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+
+ggplot(data = top_n(info_by_cuisine_simplified, 10, wt = -number), aes(x = reorder(CUISINE_SIMPLE, number), y = number)) + geom_bar(stat = "identity", fill = "#43a2ca") + ggtitle("Smallest Number of Restaurants by Cuisine") + xlab("Cuisine") + theme(axis.text.x=element_text(angle=45,hjust=1)) + ylab("Number") + scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+```
+
+```{r Bar Graphs by Cuisine Analysis}
+H <- ggplot(data = top_n(info_by_cuisine_simplified, 10, wt = score_total/inspection_total), aes(x = reorder(CUISINE_SIMPLE, score_total/inspection_total), y = score_total/inspection_total)) + 
+  geom_bar(stat = "identity", fill = "#43a2ca") + 
+  ggtitle("Cuisines with Highest Average Score \n Per Inspection") + 
+  theme_tufte(ticks = T) + theme(axis.text.x=element_text(angle=45,hjust=1)) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) + 
+  ylim(0,100) + xlab("") + ylab("")
+
+L <- ggplot(data = top_n(info_by_cuisine_simplified, 10, wt = -score_total/inspection_total), aes(x = reorder(CUISINE_SIMPLE, score_total/inspection_total), y = score_total/inspection_total)) + 
+  geom_bar(stat = "identity", fill = "#43a2ca") + 
+  ggtitle("Cuisines with Lowest Average Score \n Per Inspection") + ylab("Average Score per Inspection") +
+  theme_tufte(ticks = T) + theme(axis.text.x=element_text(angle=45,hjust=1)) + 
+  ylim(0,100) + xlab("")
+
+
+figure <- ggarrange(L, H)
+
+annotate_figure(figure, bottom = text_grob("Cuisine", color = "black", size = 15))
+```
+
+
+
+```{r Bar Plots of Cuisine and Grade}
+library(ggplot2)
+library(ggthemes)
+
+Top <- ggplot(data = info_by_cuisine_simplified, aes(x = reorder(CUISINE_SIMPLE, -average_grade), y = average_grade)) +
+  geom_bar(stat = "identity", aes(text = paste0("Number of Restaurants: ", number), fill = log(number))) +
+  ggtitle("Cuisines by Average Grade") +
+  xlab("Cuisine") + ylab("Average Grade") +
+  theme_tufte() +
+  theme(axis.text.x=element_text(angle=45,hjust=1), legend.position = "bottom") +
+  scale_fill_continuous(name = "Log Count \n of Restaurants")
+
+
+ggplotly(Top, tooltip = "text", dynamicTicks = T)
+  # %>% add_annotations( text="Number of Restaurants (Log)", xref="paper", yref="paper",
+  #                 x=1.02, xanchor="left",
+  #                 y=0.8, yanchor="bottom",    # Same y as legend below
+  #                 legendtitle=TRUE, showarrow=FALSE ) %>%
+  # layout( legend=list(y=0.8, yanchor="top" ) )
+
+ggplot(data = top_n(average_grade_by_cuisine, 10, wt = -average_grade), aes(x = reorder(CUISINE_SIMPLE, CUISINE_SIMPLE), y = average_grade)) + geom_bar(stat = "identity", fill = "black") + ggtitle("Cuisines with the Lowest Grades") + xlab("Cuisine") + ylab("Average Grade")+ theme(axis.text.x=element_text(angle=45,hjust=1))
+
+
+```
+
+```{r Info by Zip}
+
+```
+
+```{r}
+average_average_grade_by_zip <- average_grade %>%
+  mutate(ZIPCODE = as.character(ZIPCODE)) %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(average_average_grade = mean(average_grade)) %>%
+  ungroup()
+
+info_by_zip <- inner_join(info_by_zip, average_average_grade_by_zip, by = "ZIPCODE", type = "full", match = "all")
+```
+
+```{r Grade vs Violations}
+grade_and_violations <- inner_join(average_grade, violations, by = c("CAMIS", "DBA", "ZIPCODE", "CUISINE DESCRIPTION")) 
+
+grade_and_violations <- inner_join(grade_and_violations, inspections, by = c("CAMIS", "DBA", "ZIPCODE", "CUISINE DESCRIPTION")) 
+
+
+most_recent_grade_sub <- most_recent_grade %>%
+  select("CAMIS", "DBA", "GRADE") %>%
+  mutate(GRADE = as.factor(GRADE))
+
+grade_and_violations <- inner_join(grade_and_violations, most_recent_grade_sub, by = c("CAMIS", "DBA")) 
+
+grade_and_violations_sample <- sample_n(grade_and_violations, size = 2500)
+
+lm1 <- lm(data = grade_and_violations, average_grade ~ score/inspections)
+
+ggplot(grade_and_violations, aes(x = score/inspections, y = average_grade, colour = GRADE)) + 
+  xlab("Score per Inspection") + ylab("Average Grade") +
+  geom_jitter() + 
+  stat_smooth(method = "lm", col = "blue") + 
+  scale_color_brewer(palette= "Dark2", direction = -1)
+```
+
+```{r}
+create_map <- function(data){
+  setwd("/Users/chanamessinger/Dropbox/Columbia/Data Viz/Final Project/group_c_nyc_restaurants/raw_data")
+  zip_files <- readOGR("ZIP_CODE_040114/.","ZIP_CODE_040114")
+  
+  shape_with_data <- zip_files@data %>% 
+  left_join(data, by = "ZIPCODE")
+  
+  zip_files@data <- shape_with_data
+  
+  tm <- tm_shape(zip_files) + tm_borders()
+  return(tm)
+}
+```
+
+```{r Maps}
+create_map(info_by_zip, "inspections")
+create_map(info_by_zip, "average_grade")
+create_map(info_by_zip, "violsperins")
+
+```
+

@@ -1,0 +1,1295 @@
+---
+title: "Food for Thought"
+subtitle: "An Exploration of the NYC Restaurant Landscape"
+author: "Chana Messinger, Liz Walters-Parish, & Michael Weisner"
+date: "5/6/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache = TRUE, comment = FALSE, message = FALSE, error = FALSE, warning = FALSE, fig.align='center')
+```
+
+<style>
+.html-widget {
+    margin: auto;
+}
+</style>
+
+```{r initial_packages, message = FALSE, error = FALSE, include = FALSE}
+library(tidyverse)
+library(dplyr)
+library(raster)
+library(leaflet)
+library(tmap)
+library(widgetframe)
+library(rgdal)
+library(stringi)
+```
+
+# Where should you eat in New York City? {.tabset .tabset-fade .tabset-pills}
+
+## Overview
+###  Navigating the Urban Jungle of Cuisine
+New York City has a _lot_ of restaurants.
+
+In fact, it has at least 24,000 restaurants according to the [Department of Health and Mental Hygiene](https://www1.nyc.gov/site/doh/services/restaurant-grades.page), which equates to about 1 restaurant per 300 people (which feels real when you're trying to make a last minute reservation over the weekend). Hungry customers have to balance price, satisfaction, and health concerns across a dizzying landscape of competing cuisines.
+
+
+```{r Chana_Functions, message = FALSE, error = FALSE}
+#Look Michael
+simplify_cuisine <- function(data){
+  simplified <- data %>%
+    mutate(CUISINE_SIMPLE = case_when(
+      `CUISINE DESCRIPTION` %in% c("Creole", "Cajun") ~ "Creole/Cajun",
+      `CUISINE DESCRIPTION` %in% c("Czech", "Polish", "Russian") ~ "Eastern European",
+      `CUISINE DESCRIPTION` %in% c("Donuts", "Bagels/Pretzels") ~ "Bakery",
+      `CUISINE DESCRIPTION` %in% c("Tex-Mex", "Californian") ~ "Ameri-Mex",
+      `CUISINE DESCRIPTION` %in% c("Hotdogs") ~ "Hotdogs/Pretzels",
+      `CUISINE DESCRIPTION` %in% c("Bangladeshi", "Indian") ~ "Bangladeshi/Indian",
+      `CUISINE DESCRIPTION` %in% c("Tapas") ~ "Spanish",
+      str_detect(`CUISINE DESCRIPTION`, "Soup|Sandwich") ~ "Soups/Sandwiches",
+      str_detect(`CUISINE DESCRIPTION`, "Ice Cream") ~ "Ice Cream",
+      str_detect(`CUISINE DESCRIPTION`, "Coffee") ~ "Cafe",
+      str_detect(`CUISINE DESCRIPTION`, "beverage") ~ "Beverages",
+      str_detect(`CUISINE DESCRIPTION`, "Latin") ~ "Latin",
+      TRUE ~ `CUISINE DESCRIPTION`
+      ))
+  
+  return(simplified)
+}
+
+library(rgdal)
+create_map <- function(data){
+  zip_files <- readOGR("./ZIP_CODE_040114/.","ZIP_CODE_040114")
+  
+  shape_with_data <- zip_files@data %>% 
+  left_join(data, by = "ZIPCODE")
+  
+  zip_files@data <- shape_with_data
+  
+  tm <- tm_shape(zip_files) + tm_borders()
+  return(tm)
+}
+```
+
+```{r Chana_data_wrangling}
+#Look Michael
+DOH <- read_csv("raw_data/DOHMH_New_York_City_Restaurant_Inspection_Results.csv")
+
+detach("package:dplyr", unload = T)
+library(dplyr)
+
+DOH_clean <- DOH %>%
+  filter(is.na(`INSPECTION TYPE`) == F) %>%
+  mutate(`VIOLATION CODE` = case_when(
+    is.na(`VIOLATION CODE`) ~ "NV",
+    TRUE ~ as.character(`VIOLATION CODE`)
+    )
+  )
+
+restaurant_info <- DOH_clean %>%
+  mutate(reinspection = str_detect(`INSPECTION TYPE`, "Re")) %>%
+  group_by(CAMIS, DBA, ZIPCODE, `CUISINE DESCRIPTION`) %>%
+  dplyr::summarize(reinspections = sum(reinspection), checks = n(), violations = sum(!is.na(`VIOLATION DESCRIPTION`)), score = sum(SCORE, na.rm = T), inspections = length(unique(`INSPECTION DATE`))) %>%
+  ungroup()
+
+info_by_zip <- restaurant_info %>%
+  mutate(ZIPCODE = as.character(ZIPCODE)) %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(number = n(), reinspections = sum(reinspections), inspection_total = sum(inspections), violation_total = sum(violations), check_total = sum(checks), score_total = sum(score)) %>%
+  ungroup()
+
+info_by_cuisine <- restaurant_info %>%
+  group_by(`CUISINE DESCRIPTION`) %>%
+  dplyr::summarize(number = n(), reinspections = sum(reinspections), inspection_total = sum(inspections), violation_total = sum(violations), check_total = sum(checks), score_total = sum(score)) %>%
+  ungroup()
+
+info_by_cuisine_simplified <- simplify_cuisine(info_by_cuisine) %>%
+    group_by(CUISINE_SIMPLE) %>%
+    dplyr::summarize(number = sum(number), inspection_total = sum(inspection_total), violation_total = sum(violation_total), check_total = sum(check_total), score_total = sum(score_total)) %>%
+    filter((CUISINE_SIMPLE %in% c("Not Listed/Not Applicable", "Other")) == F) %>%
+  mutate(violations_per_inspection = violation_total/inspection_total) %>%
+  mutate(scoreperinspection = score_total/inspection_total)
+
+most_recent_grade <- DOH_clean %>%
+  filter(is.na(GRADE) == FALSE) %>%
+  filter(GRADE %in% c("A", "B", "C")) %>%
+  filter("GRADE DATE" == min("GRADE DATE")) %>%
+  mutate(GRADENUM = case_when(
+    GRADE == "A" ~ 3,
+    GRADE == "B" ~ 2,
+    GRADE == "C" ~ 1
+    )
+  )
+
+grade <- DOH_clean %>%
+  filter(is.na(GRADE) == FALSE) %>%
+  filter(GRADE %in% c("A", "B", "C")) %>%
+  mutate(GRADENUM = case_when(
+    GRADE == "A" ~ 3,
+    GRADE == "B" ~ 2,
+    GRADE == "C" ~ 1
+    )
+  ) %>%
+  dplyr::select(-PHONE)
+
+most_recent_grade <- grade %>%
+  group_by(CAMIS, DBA, ZIPCODE) %>%
+  filter(row_number() == min(row_number())) %>%
+  ungroup() %>%
+  select(-ACTION, -`VIOLATION CODE`, - `VIOLATION DESCRIPTION`, -`CRITICAL FLAG`, -`RECORD DATE`, -`INSPECTION TYPE`, -`INSPECTION DATE`, `GRADE DATE`)
+
+average_grade <- grade %>%
+  group_by(CAMIS, DBA, ZIPCODE, `CUISINE DESCRIPTION`) %>%
+  dplyr::summarize(average_grade = mean(GRADENUM)) %>%
+  ungroup()
+
+average_grade_by_zip <- most_recent_grade %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(average_grade = mean(GRADENUM)) %>%
+  ungroup() %>%
+  mutate(ZIPCODE = as.character(ZIPCODE))
+
+average_average_grade_by_zip <- average_grade %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(average_average_grade = mean(average_grade)) %>%
+  ungroup()%>%
+  mutate(ZIPCODE = as.character(ZIPCODE))
+
+info_by_zip <- inner_join(info_by_zip, average_grade_by_zip, by = "ZIPCODE", type = "full")
+info_by_zip <- inner_join(info_by_zip, average_average_grade_by_zip, by = "ZIPCODE", type = "full")
+
+zip_demographics <- read_csv("Demographics/nyc_zip_demographics.csv") %>%
+  mutate(ZIPCODE = as.character(ZIPCODE))
+
+info_by_zip <- inner_join(info_by_zip, zip_demographics, by = "ZIPCODE", type = "full")
+
+restaurant_info <- inner_join(restaurant_info, average_grade, by = c("CAMIS", "DBA", "ZIPCODE", "CUISINE DESCRIPTION"), type = "full")
+
+restaurant_info <- inner_join(restaurant_info, most_recent_grade, by = c("CAMIS", "DBA", "ZIPCODE", "CUISINE DESCRIPTION"), type = "full")
+
+grade_simple_cuisine <- simplify_cuisine(grade)
+
+
+average_grade_s <- grade_simple_cuisine %>%
+  group_by(CAMIS, DBA, ZIPCODE, CUISINE_SIMPLE) %>%
+  dplyr::summarize(average_grade = mean(GRADENUM)) %>%
+  ungroup()
+
+average_grade_by_cuisine_s <- average_grade_s %>%
+  group_by(CUISINE_SIMPLE) %>%
+  dplyr::summarize(average_grade = mean(average_grade))
+
+average_grade <- grade %>%
+  group_by(CAMIS, DBA, ZIPCODE, `CUISINE DESCRIPTION`) %>%
+  dplyr::summarize(average_grade = mean(GRADENUM)) %>%
+  ungroup()
+
+average_grade_by_cuisine <- average_grade %>%
+  group_by(`CUISINE DESCRIPTION`) %>%
+  dplyr::summarize(average_grade = mean(average_grade))
+
+info_by_cuisine_simplified <- inner_join(info_by_cuisine_simplified, average_grade_by_cuisine_s, by = "CUISINE_SIMPLE", type = "full", match = "all")
+
+info_by_cuisine_simplified <- info_by_cuisine_simplified %>%
+  filter(is.na(number) == F)
+
+chains <- restaurant_info %>%
+  group_by(DBA) %>%
+  dplyr::summarize(num = n()) %>%
+  filter(num>1) %>%
+  mutate(NAME = case_when(
+      str_detect(DBA, "DUNKIN") ~ "DUNKIN DONUTS",
+      str_detect(DBA, "DOMINO") ~ "DOMINOS",
+      str_detect(DBA, "MCDONALD") ~ "MCDONALDS",
+      str_detect(DBA, "STARBUCKS") ~ "STARBUCKS",
+      str_detect(DBA, "CHIPOTLE") ~ "CHIPOTLE",
+      TRUE ~ DBA
+      )) %>%
+  group_by(NAME) %>%
+  dplyr::summarize(num = sum(num))
+
+coffee_compare <- read_csv("coffee_compare.csv")
+
+starbucks <- coffee_compare %>%
+  filter(NAME == "STARBUCKS")
+
+restaurant_info_s <- simplify_cuisine(restaurant_info)
+
+cuisines_by_zip_s <- restaurant_info_s %>%
+  mutate(ZIPCODE = as.character(ZIPCODE)) %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(burgers = sum(CUISINE_SIMPLE == "Hamburgers"), pizza = sum(str_detect(CUISINE_SIMPLE, "Pizza")), salad = sum(CUISINE_SIMPLE == "Salads")) %>%
+  ungroup()
+
+cuisines_by_zip_s <- inner_join(cuisines_by_zip_s, zip_demographics, by = "ZIPCODE")
+cuisines_by_zip_s <- inner_join(cuisines_by_zip_s, select(info_by_zip, ZIPCODE, number), by = "ZIPCODE")
+
+
+cuisines_by_zip_s_mapper <- cuisines_by_zip_s %>%
+  filter(is.na(TotalPop) == F) %>%
+  mutate(burgvssalad = burgers - salad) %>%
+  mutate(pplperpizza = TotalPop/pizza)
+```
+
+```{r liz_setup, echo = FALSE, message = FALSE, error = FALSE, include = FALSE}
+library(dplyr)
+library(rgdal)
+library(raster)
+
+full_nyc_restaurants_CLEAN <- read.csv("./raw_data/full_nyc_restaurants_CLEAN.csv")
+
+full_nyc_restaurants_CLEAN <- full_nyc_restaurants_CLEAN %>%
+  filter(price != "NO PRICE")
+
+nyc_shp <- shapefile("./raw_data/ZIP_CODE_040114.shp")
+
+nyc_zip <- readOGR(dsn=path.expand('./raw_data/ZIP_CODE_040114.shp'), layer='ZIP_CODE_040114')
+
+review_data <- readr::read_csv("./raw_data/review_merged_data.csv")
+
+review_lengths <- review_data %>%
+  mutate(review_length = nchar(review))
+
+review_lengths_agg <- review_lengths %>%
+  select(price, review_length) %>%
+  mutate(price = as.factor(price))
+
+review_lengths_agg <- aggregate(.~price, data = review_lengths_agg, FUN = "mean")
+
+full_nyc_restaurants_CLEAN <- full_nyc_restaurants_CLEAN %>%
+  rename(ZIPCODE = "zip_code")
+
+full_nyc_restaurants_CLEAN <- full_nyc_restaurants_CLEAN %>%
+  filter(price != "NO PRICE")
+
+require(sp)
+
+m <- merge(nyc_shp, filter(full_nyc_restaurants_CLEAN, price != "NO PRICE"), by = "ZIPCODE", duplicateGeoms = T)
+
+content <- paste("Name:",full_nyc_restaurants_CLEAN$name_clean,"<br/>",
+                 "Street Address:",full_nyc_restaurants_CLEAN$street_address,"<br/>",
+                 "City:",full_nyc_restaurants_CLEAN$city,"<br/>",
+                 "Zipcode:",full_nyc_restaurants_CLEAN$ZIPCODE,"<br/>",
+                 "Review Count:",full_nyc_restaurants_CLEAN$review_count,"<br/>",
+                 "Rating:",full_nyc_restaurants_CLEAN$rating,"<br/>",
+                 "Price:",full_nyc_restaurants_CLEAN$price)
+```
+
+
+```{r liz_all_yelp_leaflet_map, message = FALSE, error = FALSE, fig.width = 7}
+pal1 = colorNumeric("RdYlBu", domain = full_nyc_restaurants_CLEAN$review_count)
+pal2 = colorNumeric("RdYlBu", domain = full_nyc_restaurants_CLEAN$rating)
+pal3 = colorFactor("GnBu", domain = full_nyc_restaurants_CLEAN$price)
+priceLevel <- leaflet(data = full_nyc_restaurants_CLEAN) %>% 
+  addProviderTiles(providers$CartoDB.Positron, group = "CartoDB") %>% 
+  addCircles(col = ~pal3(price), opacity = 0.9, popup = content, group = "Price") %>% 
+  addLegend(pal = pal3, values = ~price, title = "Price Level", group = "Price", position = "bottomright") %>% 
+  addCircles(col = ~pal2(rating), opacity = 0.9, popup = content, group = "Ratings") %>% 
+  addLegend(pal = pal2, values = ~rating, title = "Review Rating", group = "Ratings", position = "bottomleft") %>% 
+  addCircles(col = ~pal1(review_count), opacity = 0.9, popup = content, group = "Review Count") %>% 
+  addLegend(pal = pal1, values = ~review_count, title = "Review Count", group = "Review Count", position = "bottomleft") %>% 
+  addPolygons(data = m, fill = FALSE) %>% 
+  setView(lng = -73.97724, 40.76546, zoom = 11) %>%
+  addLayersControl(
+    baseGroups = c("Price", "Ratings", "Review Count"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+priceLevel
+```
+
+<center>
+Figure 1.1 - Yelp API Metric Distribution
+</center>
+
+Above you can see the distribution of approximately 4000 Yelp Reviewed restaurants in New York City. Each category compares their price point, number of reviews, and review score. For information on these metrics please see the Satisfaction tab.
+
+
+### Restaurants Compared to People
+
+```{r restaurants_people, message = FALSE, error = FALSE, results = FALSE, fig.width = 7, dpi = 300, fig.cap = "Figure 1.2, 1.3, 1.4 - DOHMH Restaurant Frequency by ACS Population Estimates"}
+detach("package:dplyr", unload = TRUE)
+library(dplyr)
+
+totalrest <- full_nyc_restaurants_CLEAN %>%
+  group_by(ZIPCODE) %>%
+  summarize(number = n()) %>%
+  mutate(ZIPCODE = as.character(ZIPCODE)) %>%
+  inner_join(select(zip_demographics, ZIPCODE, TotalPop), by = "ZIPCODE") %>%
+  mutate(restpercap = number/(TotalPop / 10000))
+
+
+r1 <- create_map(totalrest) + tm_fill("number", palette = "YlGnBu", title = "Number of Restaurants", style = "quantile", id = "ZIPCODE", popup.vars=c("ZIP Code: " = "ZIPCODE", "Number of Restaurants: " = "number"), popup.format = list()) + tm_layout(title.size = 1.3, legend.width = .6, frame = FALSE)
+r2 <- create_map(totalrest) + tm_fill("TotalPop", palette = "YlGnBu", title = "Number of People", style = "quantile", id = "ZIPCODE", popup.vars=c("ZIP Code: " = "ZIPCODE", "Number of People: " = "TotalPop"), popup.format = list()) + tm_layout(title.size = 1.3, legend.width = .6, frame = FALSE)
+r3 <- create_map(totalrest) + tm_fill("restpercap", palette = "YlGnBu", title = "Restaurants \nper 10,000 People", style = "quantile", id = "ZIPCODE", popup.vars=c("ZIP Code: " = "ZIPCODE", "Number of People: " = "TotalPop", "Number of Restaurants: " = "number", "Restaurants per \n10K People: " = "restpercap"), popup.format = list()) + tm_layout(title.size = 1.3, legend.width = .6, frame = FALSE)
+
+tmap_arrange(r1, r2, r3, ncol = 3)
+```
+
+
+```{r, message = FALSE, error = FALSE, eval=FALSE, include= FALSE}
+
+  zip_files <- readOGR("./ZIP_CODE_040114/.","ZIP_CODE_040114")
+  
+  shape_with_data <- zip_files@data %>% 
+  left_join(totalrest, by = "ZIPCODE")
+  
+  zip_files@data <- shape_with_data
+  
+tmap_leaflet_test<- tm_shape(zip_files) + tm_borders(alpha = 0.9) + tm_fill("number", palette = "YlGnBu", title = "Number of Restaurants", style = "quantile", id = "ZIPCODE", popup.vars=c("ZIP Code: " = "ZIPCODE", "Number of Restaurants: " = "number"), popup.format = list()) + tm_layout(title.size = 1.3, legend.width = .6, frame = FALSE)
+  
+
+pal_numrest <- colorNumeric("GnBu", domain = totalrest$number)
+                                 
+test <- tmap_leaflet(tmap_leaflet_test) %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "CartoDB")
+  
+test
+
+```
+
+```{r, message = FALSE, error = FALSE}
+library(mapview)
+
+r1_leaf <- tmap_leaflet(r1) %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "CartoDB")
+r2_leaf <- tmap_leaflet(r2) %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "CartoDB")
+r3_leaf <- tmap_leaflet(r3) %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "CartoDB")
+
+```
+
+Comparing the distribution of restaurants to people per zip code, the densest areas of restaurants surprisingly do not map onto the densest number of people. Rather they're clustered in lower Manhattan and Western Brooklyn and Queens. Certain areas within these are known food hubs, such as Greenwich Village in Manhattan, Williamsburg in Brooklyn, and Astoria in Queens. For detailed information see figure 1.5 below, an interactive restaurants per 10,000 people map. Future iterations of the tool will hopefully provide more interactive choropleth maps.
+
+```{r}
+r3_leaf
+#sync(r1_leaf, r2_leaf, r3_leaf, ncol = 3) #this makes them all synced together with zoom and the mouse. 
+#latticeView(r1_leaf, r2_leaf, r3_leaf)
+```
+
+<center>
+Figure 1.5 - DOHMH Interactive Restaurants Per 10,000 People
+</center>
+
+
+
+
+### Total Restaurants by Cuisine
+```{r cuisine_types, message = FALSE, error = FALSE, warning = FALSE}
+library(plotly)
+library(ggplot2)
+library(ggthemes)
+cuisines <- ggplot(data = info_by_cuisine_simplified, aes(x = reorder(CUISINE_SIMPLE, -number), y = number)) + 
+  geom_bar(stat = "identity", fill = "#43a2ca", width = .9, aes(text = paste0("Cuisine: ", CUISINE_SIMPLE, "\nNumber of Restaurants: ", number))) + 
+  ggtitle("Number of Restaurants in Each Cuisine") + 
+  xlab("Cuisine") + ylab("Number") + 
+  theme_tufte() +
+  theme(axis.text.x=element_text(angle=45,hjust=1)) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+```
+
+```{r tot_cuisine_ggplot, fig.width = 7}
+ggplotly(cuisines, tooltip = "text", dynamicTicks = T)
+```
+
+<center>
+Figure 1.6 - DOHMH Cuisine Category Frequency
+</center>
+
+America is known as a melting pot, so it's unsurprising that the nebulous category of "American" cuisine is far and away the most common restaurants type. Basque, a regional Spanish cuisine, is the least common with only a single restaurant recorded. 
+
+```{r dem_map_setup, message = FALSE, error = FALSE, include = FALSE, results = FALSE}
+library(raster)
+library(leaflet)
+library(tm)
+library(widgetframe)
+library(rgdal)
+
+# read data    
+
+demographics_agg <- read_csv("./Demographics/nyc_zip_demographics.csv")
+zip_dem <- read_csv("./Demographics/nyc_zip_demographics.csv")
+
+p <- readOGR("./raw_data/ZIP_CODE_040114.shp")
+
+# merge on common variable, here called 'key'
+dem_m <- merge(p, demographics_agg, by='ZIPCODE')
+
+library(tmap)
+total_pop <- tm_shape(dem_m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(dem_m) +
+  tm_fill("TotalPop", fill.title = "Total NYC Population by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white", frame = FALSE)
+
+pct_men <- tm_shape(dem_m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(dem_m) +
+  tm_fill("Men_pct", fill.title = "NYC Percentage of Population are Men by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white", frame = FALSE)
+
+pct_white <- tm_shape(dem_m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(dem_m) +
+  tm_fill("White_pct", fill.title = "NYC Percentage of Population are Men by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white", frame = FALSE)
+
+pct_hispanic <- tm_shape(dem_m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(dem_m) +
+  tm_fill("Hispanic_pct", fill.title = "NYC Percentage of Population are Hispanic by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white", frame = FALSE)
+
+pct_black <- tm_shape(dem_m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(dem_m) +
+  tm_fill("Black_pct", fill.title = "NYC Percentage of Population are Black by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+pct_native <- tm_shape(dem_m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(dem_m) +
+  tm_fill("Native_pct", fill.title = "NYC Percentage of Population are Native American by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white", frame = FALSE)
+
+pct_asian <- tm_shape(dem_m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(dem_m) +
+  tm_fill("Asian_pct", fill.title = "NYC Percentage of Population are Asian by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white", frame = FALSE)
+
+pct_poverty <- tm_shape(dem_m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(dem_m) +
+  tm_fill("Poverty_pct", fill.title = "NYC Percentage of Population are at or Below the Poverty Line by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white", frame = FALSE)
+
+pct_unemployment <- tm_shape(dem_m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(dem_m) +
+  tm_fill("Unemployment_pct", fill.title = "NYC Percentage of Population are Unemployed by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white", frame = FALSE)
+```
+
+
+## Cuisines
+#### Cruising for Cuisine
+
+
+### Pie in the Sky
+
+What does everybody love? Pizza! Which zips have the most pizza?
+
+```{r pizza_maps, error = FALSE, message = FALSE, results = FALSE, fig.width = 7, dpi = 300, fig.cap = "Figure 2.1, 2.2, 2.3 - DOHMH Pizza Frequency, DOHMH Pizza by ACS Population, DOHMH Average Pizza Health Grades"}
+pizza <- restaurant_info_s %>%
+  mutate(ZIPCODE = as.factor(ZIPCODE)) %>%
+  filter(str_detect(CUISINE_SIMPLE, "Pizza")) %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(pizza_grade = mean(GRADENUM, na.rm = T)) %>%
+  ungroup()
+
+p1 <- create_map(cuisines_by_zip_s_mapper) + tm_fill("pplperpizza", palette = "YlOrRd", title = "People per \nPizza Restaurant")+ tm_layout(title.size = 1.3, legend.width = .6, frame = FALSE)
+
+p2 <- create_map(cuisines_by_zip_s_mapper) + tm_fill("pizza", palette = "YlOrRd", title = "Number of \nPizza Restaurants")+ tm_layout(title.size = 1.3, legend.width = .6, frame = FALSE)
+
+p3 <- create_map(pizza) + tm_fill("pizza_grade", palette = "Blues", title = "Average Grade of \nPizza Restaurants", breaks = c(2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0))+ tm_layout(title.size = 1.3, legend.width = .6, frame = FALSE)
+
+
+tmap_arrange(p2, p1, p3, ncol = 3)
+```
+
+The great number of pizza restaurants means you won't have to wait that long for a slice in Manhattan, but in Roxbury (the red point at the southern part of the map) you could be waiting quite a while given the pizza scarcity.
+
+However, we can see that some areas may be healthier than others (we're looking at you, Coney Island).
+
+
+### Life in the Fast (Food) Lane
+
+Or maybe it's just late at night and you want to know which areas have the most fast food. Maybe McDonald's?
+
+
+```{r mcdonalds, error = FALSE, message = FALSE, results = FALSE, fig.width = 7, dpi = 300, fig.cap = "Figure 2.4 - DOHMH Pizza Frequency, DOHMH Pizza by ACS Population, DOHMH Average Pizza Health Grades"}
+mcdonalds <- read_csv("mcdonalds.csv")
+
+mcdonalds_count <- mcdonalds %>%
+  group_by(ZIPCODE) %>%
+  summarize(number = n())
+
+mcdonalds_count <- left_join(select(zip_dem, ZIPCODE, TotalPop), mcdonalds_count)
+
+mcdonalds_count$number[is.na(mcdonalds_count$number)] <- 0
+
+mcdonalds_count$ZIPCODE <- as.character(mcdonalds_count$ZIPCODE)
+
+create_map(mcdonalds_count) + tm_fill("number", palette = "Reds", title = "Number of \nMcDonalds") + tm_layout(frame = FALSE)
+```
+
+If you're craving a Big Mac, look no further than Midtown West. McDonalds actually does not map on to the most common restaurant areas of lower Manhattan and Western Brooklyn and Queens, with many locations being represented in more populous outer neighborhoods. 
+
+
+### Coffee Clash - Starbucks vs Dunkin
+Maybe you just need a cup of coffee to get over said late night McDonald's run. But are you a Starbucks or Dunkin fan?
+
+```{r starbucks_dunkin, message = FALSE, error = FALSE, results = FALSE, fig.width = 7, dpi = 300, fig.cap = "Figure 2.5, 2.6 - DOHMH Dunkin Donuts vs Starbucks zip code frequency"}
+starbucks <- coffee_compare %>%
+  filter(NAME == "STARBUCKS")
+
+coffee_compare_chloro <- coffee_compare %>%
+  mutate(ZIPCODE = as.factor(ZIPCODE)) %>%
+  group_by(ZIPCODE) %>%
+  dplyr::summarize(Starbucks = sum(NAME == "STARBUCKS"), `Dunkin Donuts` = sum(NAME == "DUNKIN DONUTS")) %>%
+  inner_join(select(info_by_zip, ZIPCODE, number), by = "ZIPCODE") %>%
+  mutate(starvsdunk = (Starbucks - `Dunkin Donuts`)) %>%
+  mutate(more = as.factor(case_when(
+         Starbucks > `Dunkin Donuts` ~ "Starbucks",
+         Starbucks < `Dunkin Donuts` ~ "Dunkin Donuts",
+         Starbucks == `Dunkin Donuts` ~ "Equal",
+))) %>%
+  mutate(equal = (Starbucks == `Dunkin Donuts`))
+
+content1 <- paste("Restaurant:",coffee_compare$NAME,"<br/>")
+
+content <- paste("Current Grade:",starbucks$GRADE,"<br/>",
+                 "Average Grade:",starbucks$average_grade,"<br/>",
+                 "Average Score per Inspection:",round(starbucks$score/starbucks$inspections,3),"<br/>")
+
+pal1 = colorNumeric(c("#90E296", "#005100"), domain = (starbucks$score/starbucks$inspections))
+
+pal <- colorFactor(palette = c("hot pink", "dark green"), 
+               levels = c("DUNKIN DONUTS", "STARBUCKS"))
+
+leaflet(data = coffee_compare) %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addCircles(col = ~pal(as.factor(NAME)), opacity = 0.9, popup = content1) %>% 
+  setView(lng = -73.958701, 40.787435, zoom = 13)
+
+sb1 <- create_map(coffee_compare_chloro) + tm_fill("starvsdunk", palette = "PiYG", title = "How Many More Starbucks \n than Dunkin Donuts") + tm_layout(frame = FALSE)
+
+sb2 <- create_map(coffee_compare_chloro) + tm_fill("more", palette = c("#FF80D8", "#FFFFFF", "#3A790F"), title = "Which is More Common: \nStarbucks vs Dunkin Donuts") + tm_layout(frame = FALSE)
+
+tmap_arrange(sb2, sb1, ncol = 2)
+```
+
+There's a fairly clear Manhattan / Outer Borough divide when it comes to coffee preference, but things seem to be changing in Williamsburg. Nothing says gentrification like a Starbucks on every corner.
+
+
+## Health
+#### A Healthy Appetite
+
+### Healthy Options
+
+#### Burgers or Salad?
+
+Maybe you usually go for a burger, but you decide that you want to get a little more greens in your life. Are there any areas that support your life choices?
+
+```{r burger_salad, message=FALSE, error = FALSE, results = FALSE, fig.width = 7, dpi = 300, fig.cap= "Figure 3.1 - DOHMH Burger vs Salad Restaurant Distributions"}
+pal2 = colorNumeric(c("#FFBD7F", "#000000", "#00C024"), domain = cuisines_by_zip_s_mapper$burgvssalad)
+
+create_map(cuisines_by_zip_s_mapper) + tm_fill("burgvssalad", palette = "-BrBG", title = "How Many More \nBurger Places than Salad Places")+ tm_layout(title.size = 1.3, legend.width = .6, frame = FALSE)
+
+```
+
+When it comes to eating healthy, salad is the poster child. However, it's clearly not what we crave. Unless you live in Midtown East your leafy greens will be surrounded by a sea of beef.
+
+
+### Health Grades 
+The [Department of Health and Mental Hygiene](https://www1.nyc.gov/assets/doh/downloads/pdf/rii/inspection-cycle-overview.pdf) conducts regular inspections of restaurants and award a score based on the number and type of violations they uncover. More severe violations are worth more points. If a restaurant scores below 14, they get an A. If they score a 14 or more, they get reinspected after some time to correct the issues and a grade is awarded based on the new score they receive, with A being lower than 14, B awarded for scores of 14 to 27, and C for scores of 28 or higher.
+
+
+#### Inspection Scores vs Health Grades
+
+There is a statistically significant relationship between the score per inspection (the average points racked up each time the DOH came by) and the average grade of the restaurant (averaging all grades they've gotten). The restaurants are colored by their current grade. It is notable that currently A-rated restaurants have average grades all the way down to ~1.2, meaning they have climbed up from C's and B's to improve. 
+
+```{r, error = FALSE, message = FALSE, results=FALSE}
+library(ggthemes)
+
+lm1 <- lm(data = restaurant_info, average_grade ~ score/inspections)
+
+colorset = c('A'='#3273db','B'='#2b9b38','C'='#f29c24')
+Scale <- scale_colour_manual(name="GRADE", values=colorset)
+
+simpleCap <- function(x) {
+    s <- strsplit(x, " ")[[1]]
+    paste(toupper(substring(s, 1, 1)), substring(s, 2),
+          sep = "", collapse = " ")
+}
+
+simpleCap(restaurant_info$DBA[1])
+
+restaurant_info$namecap <- map(restaurant_info$DBA, ~simpleCap(tolower(.)))
+
+gg_inspection_scores <- ggplot(restaurant_info, aes(x = score/inspections, y = average_grade)) + 
+  theme_tufte(ticks = TRUE) +
+  xlab("Score per Inspection") + ylab("Average Grade") +
+  geom_jitter(aes(color = GRADE, text = namecap)) + 
+  Scale +
+  stat_smooth(method = "lm", col = "red")
+```
+
+
+```{r, error = FALSE, message = FALSE}
+ggplotly(gg_inspection_scores, tooltip = "text")
+```
+Figure 3.2 - DOHMH Average Restaurant Grade by Average Score per Health Inspection
+
+
+#### Restaurant Chains Break Trends
+
+```{r, fig.width = 7}
+content_m <- paste("Current Grade:",mcdonalds$GRADE,"<br/>",
+                 "Average Grade:",mcdonalds$average_grade,"<br/>",
+                 "Average Score per Inspection:", round(mcdonalds$score/mcdonalds$inspections),3)
+
+
+pal_m = colorNumeric(c("#F0FF33", "#FF0028"), domain = (mcdonalds$score/mcdonalds$inspections))
+
+leaflet() %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+    addCircles(data = starbucks, col = ~pal1(score/inspections), opacity = 1, popup = content, radius = 13, group = "Starbucks") %>% 
+  addCircles(data = mcdonalds, col = ~pal_m(score/inspections), opacity = 1, popup = content_m, radius = 13, group = "McDonalds") %>% 
+    addLegend(pal = pal1, values = starbucks$score/starbucks$inspections, group = "Starbucks", title = "Score Per Inspection (Starbucks)", bins= 5) %>% 
+  addLegend(pal = pal_m, values = mcdonalds$score/mcdonalds$inspections, group = "McDonalds", title = "Score Per Inspection (McDonalds)", bins= 5) %>% 
+  setView(lng = -73.958701, 40.787435, zoom = 12) %>% 
+  addLayersControl(
+    baseGroups = c("Starbucks", "McDonalds"),
+    options = layersControlOptions(collapsed = F)
+  )
+```
+Figure 3.3 - DOHMH Restaurant Score Per Inspection Variation
+
+
+Above we can see that just because "Star" is in the name, not every location has a stellar health score. The same goes for McDonalds. If you're craving your favorite coffee or fast food there could be locations worth avoiding.
+
+
+#### Cs get Degrees: Which Zip Codes have the Worst Average Health Grade?
+
+```{r, error = FALSE, message = FALSE, results = FALSE, fig.width = 7, dpi = 300, fig.cap= "Figure 3.4 - DOHMH Average Health Grade by Zip Code"}
+create_map(info_by_zip) + tm_fill("average_grade", palette = "YlGnBu", title = "Average Grade") + tm_borders() + tm_layout(frame = FALSE)
+```
+
+Above illustrates zip codes that have the worst average grades per inspection, which means they might be great spots to eat if you're hoping to use a sick day next week. Many of the areas with the fewest restaurants seem to have the highest average grades. 
+
+
+#### What types of cuisines have the worst grades?
+
+
+```{r cuisine_worst_grades, fig.width = 7}
+library(ggplot2)
+library(ggthemes)
+
+Top <- ggplot(data = info_by_cuisine_simplified, aes(x = reorder(CUISINE_SIMPLE, -average_grade), y = average_grade)) +
+  geom_bar(stat = "identity", aes(text = paste0("Cuisine: ", CUISINE_SIMPLE, "\nNumber of Restaurants: ", number), fill = log(number))) +
+  ggtitle("Cuisines by Average Grade") +
+  xlab("Cuisine") + ylab("Average Grade") +
+  theme_tufte() +
+  theme(axis.text.x=element_text(angle=45,hjust=1), legend.position = "bottom") +
+  scale_fill_continuous(name = "Log Count \n of Restaurants") + coord_cartesian(2,3)
+
+
+Topy <- ggplotly(Top, tooltip = "text", dynamicTicks = T)
+
+Topy
+```
+Figure 3.5 - DOHMH Average Gradse by Cuisine
+
+
+Basque restaurants have the highest average, but there are very few (one, in fact). Cajun & Creole restaurants, conversely, have the lowest average health grades.
+
+```{r cuisine_avg_scores, fig.width = 7, dpi = 300, fig.cap= "Figure 3.6, 3.7 - DOHMH Lowest and Highest Average Scores Per Inspection"}
+
+library(ggpubr)
+
+H <- ggplot(data = top_n(info_by_cuisine_simplified, 10, wt = score_total/inspection_total), aes(x = reorder(CUISINE_SIMPLE, score_total/inspection_total), y = score_total/inspection_total)) + 
+  geom_bar(stat = "identity", fill = "#43a2ca") + 
+  ggtitle("Cuisines with Highest Average Score \n Per Inspection") + 
+  theme_tufte(ticks = T) + theme(axis.text.x=element_text(angle=45,hjust=1)) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) + 
+  ylim(0,100) + xlab("") + ylab("")
+
+L <- ggplot(data = top_n(info_by_cuisine_simplified, 10, wt = -score_total/inspection_total), aes(x = reorder(CUISINE_SIMPLE, score_total/inspection_total), y = score_total/inspection_total)) + 
+  geom_bar(stat = "identity", fill = "#43a2ca") + 
+  ggtitle("Cuisines with Lowest Average Score \n Per Inspection") + ylab("Average Score per Inspection") +
+  theme_tufte(ticks = T) + theme(axis.text.x=element_text(angle=45,hjust=1)) + 
+  ylim(0,100) + xlab("")
+
+
+figure <- ggarrange(L, H)
+
+annotate_figure(figure, bottom = text_grob("Cuisine", color = "black", size = 15))
+```
+
+We can see that Basque, somewhat unsurprisingly, has the lowest average score per inspection, while Filipino and Southwestern cuisines have the highest.
+
+```{r cuisine_table_search, results=TRUE, message = TRUE, error = TRUE}
+library(DT)
+cuisine_table_info <- info_by_cuisine_simplified %>%
+  mutate(Cuisine = CUISINE_SIMPLE, Number = number, `Average Grade` = round(average_grade,3), `Score per Inspection` = round(scoreperinspection, 3)) %>%
+  select(Cuisine, Number, `Average Grade`, `Score per Inspection`)
+```
+
+```{r cuisine_table_output}
+datatable(cuisine_table_info, options = list(pageLength = 5, columnDefs = list(list(className = 'dt-center', targets = 0:2))), rownames = F)
+```
+
+
+## Satisfaction
+
+#### I Can't Get No Satisfaction
+
+### Yelp Data
+
+Yelp users rate restaurants on a scale of 1 to 5 on a completely subjective scale. They also can provide written reviews, which range in length and content. Both can provide some insights into users experience of restaurants.
+
+
+### What Zip Codes have the Most High and Low Rated Restaurants?
+
+```{r five_star, error = FALSE, message = FALSE}
+five_star <- sample("./yelp_5star.png", size=10, replace = TRUE) 
+```
+
+```{r five_star_zips, error = FALSE, message = FALSE}
+library(ggimage)
+detach("package:dplyr", unload = TRUE)
+library(dplyr)
+library(ggthemes)
+
+nyc_fivestar <- full_nyc_restaurants_CLEAN %>%
+  select(rating, ZIPCODE) %>%
+  group_by(rating, ZIPCODE) %>%
+  summarize(number = n()) %>%
+  ungroup() %>%
+  filter(is.na(rating) == F, rating == "5") %>%
+  arrange(desc(number)) %>%
+  mutate(tally = 1:43) %>%
+  filter(tally < 11)
+
+
+ high_star <- ggplot(nyc_fivestar, aes(x=reorder(as.character(ZIPCODE), number), y=number)) +
+    geom_segment( aes(x=reorder(as.character(ZIPCODE), number), xend=reorder(as.character(ZIPCODE), number), y=0, yend=number), color="skyblue", size=1) +
+    geom_point( color="blue", size=4, alpha=0.01) +
+  geom_image(aes(image=five_star), size= .05) + 
+    theme_tufte() +
+    coord_flip() +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor.x = element_blank(), 
+      panel.grid.major.x = element_blank(),
+      panel.border = element_blank(),
+      axis.ticks.y = element_blank()
+    ) + labs(title = "Zipcodes with Highest Number \n of 5 Star Restaurants", x = "", y = "Number of 5 Star Restaurants", fill = "Rating") 
+```
+
+
+```{r two_star, error = FALSE, message = FALSE}
+two_star <- sample("./yelp_1star.png", size=10, replace = TRUE) 
+```
+
+```{r lowest_rated_zips, error = FALSE, message = FALSE, fig.width = 7, dpi = 300, fig.cap= "Figure 4.1, 4.2 - Yelp API Zip Codes with Most Low and High Rated Restaurants"}
+nyc_twostar <- full_nyc_restaurants_CLEAN %>%
+  select(rating, ZIPCODE) %>%
+  group_by(rating, ZIPCODE) %>%
+  summarize(number = n()) %>%
+  ungroup() %>%
+  filter(!is.na(rating), rating == "2.5") %>%
+  arrange(desc(number)) %>%
+  mutate(tally = 1:23) %>%
+  filter(tally < 11)
+
+ low_star <- ggplot(nyc_twostar, aes(x=reorder(as.character(ZIPCODE), number), y=number)) +
+    geom_segment( aes(x=reorder(as.character(ZIPCODE), number), xend=reorder(as.character(ZIPCODE), number), y=0, yend=number), color="skyblue", size=1) +
+    geom_point( color="blue", size=4, alpha=0.01) +
+  geom_image(aes(image=two_star), size= .05) + 
+    theme_tufte() +
+    coord_flip() +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor.x = element_blank(), 
+      panel.grid.major.x = element_blank(),
+      panel.border = element_blank(),
+      axis.ticks.y = element_blank()
+    ) + labs(title = "Zipcodes with Highest \n Number of Low Rated Restaurants", x = "", y = "Number of 2.5 Star Restaurants", fill = "Rating") 
+
+
+library(ggpubr)
+ 
+ggarrange(low_star, high_star, ncol = 2)
+```
+ 
+Zip code 10475 is Baychester in the Bronx while 11211 is Williamsburg in Brooklyn. For the rest please see the interactive table below:
+
+```{r Zip_Rating_Plot}
+
+library(DT)
+
+Zipcodes <- c(10475, 10451, 10465, 10462, 10461, 10453, 10314, 10312, 10309, 10301, 11211, 11357, 11231, 11215, 10310, 10304, 11103, 11102, 10014, 10009)
+Neighborhoods <- c("Eastchester/Baychester", "South Bronx", "Throgs Neck", "Parckchester/Pelham Parkway", "Morris Park/Westchester Square/Pelham Bay", "Morris Heights", "Grantville/Westerleigh/Castleton Corners/New Springville/Heartland Village", "Arden Heights/Annadale/Rossville", "Pleasant Plains", "Tompkinsville/St. George", "Williamsburg", "Malba/Whitestone/Beechhurst/Clearview", "Red Hook/Carrol Gardens", "Park Slope", "Edwin Markham Gardens/West Brighton/Port Richmond", "Todt Hill/Clifton/Park Hill", "Astoria", "Astoria", "Greenwich Village", "East Village") 
+Boroughs <- c("Bronx", "Bronx", "Bronx", "Bronx", "Bronx", "Bronx", "Staten Island","Staten Island", "Staten Island", "Staten Island", "Brooklyn", "Queens", "Brooklyn", "Brooklyn", "Staten Island", "Staten Island", "Queens", "Queens","Manhattan", "Manhattan")
+
+Zips_Price <- data.frame(Zipcodes, Neighborhoods, Boroughs)
+
+datatable(Zips_Price, options = list(pageLength = 5, columnDefs = list(list(className = 'dt-center', targets = 0:2))), rownames = FALSE)
+```
+
+
+### Positive Review Text Sentiment by Zip Code
+
+```{r sentiment_setup, error = FALSE, message = FALSE, results = TRUE}
+detach("package:dplyr", unload = TRUE)
+library(dplyr)
+library(ggwordcloud)
+# review_sentiments_small <- review_words_sentiment %>%
+#   group_by(sentiment) %>%
+#   top_n(25) %>%
+#   ungroup() %>%
+#   count(word, sentiment, sort = TRUE) %>%
+#   mutate(rank = row_number())
+
+library(tidytext)
+library(ggplot2)
+library(ggthemes)
+
+review_words <- review_data %>%
+  select(restaurant_name, user_id, rating, price, zip_code, review) %>%
+  unnest_tokens(word, review) %>%
+  filter(!word %in% stop_words$word,
+         str_detect(word, "^[a-z']+$"))
+
+review_words_sentiment <- review_words %>%
+  inner_join(get_sentiments("bing"))
+```
+
+
+```{r sentiment_map_setup, error = FALSE, message = FALSE, results = FALSE}
+review_words_sent_zip <- review_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(zip_code, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+num_reviews_zip <- review_data %>% 
+  select(zip_code) %>%
+  mutate(total_reviews = 1)
+
+num_reviews_zip <- aggregate(.~ zip_code, num_reviews_zip, FUN = "sum")
+
+review_words_sent_zip <- left_join(review_words_sent_zip, num_reviews_zip)
+
+library(zipcode)
+data(zipcode)
+
+zipcode$zip_code <- as.numeric(zipcode$zip)
+geo_reviews <- inner_join(review_words_sent_zip, zipcode, by = "zip_code")
+
+geo_reviews <- geo_reviews %>%
+  rename(ZIPCODE = zip_code) %>%
+  mutate(avg_sentiment = sentiment / total_reviews)
+
+
+geo_rev_p <- readOGR("./raw_data/ZIP_CODE_040114.shp")
+
+# merge on common variable, here called 'key'
+geo_rev_map <- merge(geo_rev_p, geo_reviews, by='ZIPCODE')
+```
+
+
+```{r sentiment_map, error = FALSE, message = FALSE, results = FALSE, fig.width = 7, dpi = 300, fig.cap= "Figure 4.3, 4.4 - Stonybrook Yelp NYC Overall and Average Review Text Sentiment Score by Zip Code"}
+library(RColorBrewer)
+
+library(tmap)
+overall_sentiment <- tm_shape(geo_rev_map) +
+  tm_polygons() +
+  tm_shape(geo_rev_map) +
+  tm_fill("sentiment", fill.title = "Yelp Review Sentiment by Zip Code", scale = 1.0, alpha = 1.0, palette = "GnBu", style = "quantile", title = "Overall Sentiment") +
+  tm_layout(legend.bg.color = "white", frame = FALSE) + tm_borders()
+
+total_reviews <- tm_shape(geo_rev_map) +
+  tm_polygons() +
+  tm_shape(geo_rev_map) +
+  tm_fill("total_reviews", fill.title = "Total Yelp Reviews by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white", frame = FALSE) + tm_borders()
+
+positive_review_map <- tm_shape(geo_rev_map) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(geo_rev_map) +
+  tm_fill("positive", fill.title = "Total Positive Yelp Sentiment by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white", frame = FALSE) + tm_borders()
+
+negative_review_map <- tm_shape(geo_rev_map) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(geo_rev_map) +
+  tm_fill("negative", fill.title = "Total Negative Yelp Sentiment by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white", frame = FALSE) + tm_borders()
+
+average_sentiment <- tm_shape(geo_rev_map) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(geo_rev_map) +
+  tm_fill("avg_sentiment", fill.title = "Total Negative Yelp Sentiment by Zip Code", scale = 1.0, alpha = 1.0, palette = "GnBu", style = "quantile", title = "Average Sentiment") +
+  tm_layout(legend.bg.color = "white", frame = FALSE) + tm_borders()
+
+tmap_arrange(overall_sentiment, average_sentiment, ncol = 2)
+```
+
+Unfortunately, as you can see, the Yelp review data does not cover the full extent of New York City. However, we can still see a concentration in the densest restaurant areas. In these we can see that the overall sentiment scores are positive, and there is a higher overall and average sentiment in the most common restaurant areas. For more on sentiment please see the Sentiment tab.
+
+## Stats by Price
+#### There Ain't No Such Thing as a Free Lunch
+
+### The (Yelp) Price is Right
+
+Yelp pricing is based on the following criteria:
+
+```{r price_table}
+knitr::kable(
+  cbind(`Price Category` = c("`$`", "`$$`", "`$$$`", "`$$$$`"), Minimum = c("$1", "$11", "$31", "$61"), Maximum = c("$10", "$30", "$60", "$61<")), caption = "Yelp Price Criteria"
+)
+```
+
+
+Figure 5.1 - Yelp Price Categories
+
+
+### Average Yelp Prices, Review Ratings, and Review Counts per Zip
+
+```{r liz_price_map, message = FALSE, error = FALSE, fig.width = 7, dpi = 300, fig.cap= "Figure 5.2, 5.3, 5.4 - Yelp API Price, Review Rating, and Review Count by Zip Code"}
+library(tmap)
+
+tm_yelp <- tm_shape(m) + tm_borders
+
+choro_price <- tm_yelp + tm_fill("price", title = "Price of \nRestaurants by Zipcode", palette = "GnBu", style = "quantile") + tm_layout(title = "Average Price", title.size = 1.3, legend.width = .6, frame = FALSE) + tm_borders()
+
+choro_reviewcount <- tm_yelp  + tm_fill("review_count", title = "Review Count of \nRestaurants by Zipcode", palette = "GnBu", style = "quantile") + tm_layout(title = "Average Review Count", title.size = 1.3, legend.width = .6, frame = FALSE) + tm_borders()
+
+choro_rating <- tm_yelp + tm_fill("rating", title = "Review Rating of \nRestaurants by Zipcode", palette = "GnBu", style = "quantile") + tm_layout(title = "Average Review Rating", title.size = 1.3, legend.width = .6, frame = FALSE) + tm_borders()
+
+tmap_arrange(choro_price, choro_rating, choro_reviewcount, nrow = 1, ncol = 3)
+```
+
+While the point maps on the Overview tab give a general sense of the distribution of restaurants, here we can see their zip code averages. There are no restaurants rated below two stars, possibly because there are few or they do not appear in the API call. Most restaurants have well below 2000 reviews.
+
+### Where are the Most & Least Expensive Restaurants?
+
+```{r fork_knife, message = FALSE, error = FALSE}
+image <- sample("./download-1.png", size=10, replace = TRUE) #creates an image variable for the fork and knife icon 
+```
+
+```{r expensive_restaurants, message = FALSE, error = FALSE}
+library(ggimage)
+
+nyc <- full_nyc_restaurants_CLEAN %>%
+  filter(price != "NO PRICE") %>%
+  select(price, ZIPCODE) %>%
+  group_by(price, ZIPCODE) %>%
+  summarize(number = n()) %>%
+  ungroup() %>%
+  filter(is.na(price) == F, price == "$$$$") %>%
+  arrange(desc(number)) %>%
+  mutate(tally = 1:37) %>%
+  filter(tally < 11)
+
+ pricey <- ggplot(nyc, aes(x=reorder(as.character(ZIPCODE), number), y=number)) +
+    geom_segment( aes(x=reorder(as.character(ZIPCODE), number), xend=reorder(as.character(ZIPCODE), number), y=0, yend=number), color="skyblue", size=1) +
+    geom_point( color="blue", size=4, alpha=0.6) +
+  geom_image(aes(image=image), size=.05) + 
+    theme_tufte() +
+    coord_flip() +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor.x = element_blank(), 
+      panel.grid.major.x = element_blank(),
+      panel.border = element_blank(),
+      axis.ticks.y = element_blank()
+    ) + labs(title = "Zipcodes with Most $$$$ Restaurants", x = "", y = "Number of $$$$ Restaurants", fill = "Price by $ Categories") 
+```
+
+
+```{r cheap_restaurants, message = FALSE, error = FALSE, fig.width = 7, dpi = 300, fig.cap= "Figure 5.5, 5.6 - Yelp API Zip Codes with Most High and Low Priced Restaurants"}
+library(ggpubr)
+nyc_cheap <- full_nyc_restaurants_CLEAN %>%
+  select(price, ZIPCODE) %>%
+  group_by(price, ZIPCODE) %>%
+  summarize(number = n()) %>%
+  ungroup() %>%
+  filter(is.na(price) == F, price == "$") %>%
+  arrange(desc(number)) %>%
+  mutate(tally = 1:122) %>%
+  filter(tally < 11)
+
+
+ cheap <- ggplot(nyc_cheap, aes(x=reorder(as.character(ZIPCODE), number), y=number)) +
+    geom_segment( aes(x=reorder(as.character(ZIPCODE), number), xend=reorder(as.character(ZIPCODE), number), y=0, yend=number), color="skyblue", size=1) +
+    geom_point( color="blue", size=4, alpha=0.6) +
+  geom_image(aes(image=image), size=.05) + 
+    theme_tufte() +
+    coord_flip() +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor.x = element_blank(), 
+      panel.grid.major.x = element_blank(),
+      panel.border = element_blank(),
+      axis.ticks.y = element_blank()
+    ) + labs(title = "Zipcodes with Most $ Restaurants", x = "", y = "Number of $ Restaurants", fill = "Price by $ Categories")  
+
+ 
+ ggarrange(pricey, cheap, ncol = 2)
+```
+
+10019 is Hell's Kitchen, so that's why your pre-Broadway show meals cost as much as the tickets. Meanwhile, Elmhurst in Queens has the most cheap restaurants. For the rest, see the interactive table below:
+
+```{r Zip_Price_Plot, message = FALSE, error = FALSE, results = FALSE}
+
+library(DT)
+
+Zipcode <- c(10019, 10013, 10011, 10003, 10012, 10018, 10002, 10014, 10017, 10036, 11373, 11354, 10462, 10461, 10314, 11215, 10467, 10458, 10451, 10468  )
+Neighborhood <- c("Hells Kitchen", "Lower Manhattan", "Chelsea", "NoHo", "SoHo", "Midtown", "Lower East Side", "Greenwich Village", "Murray Hill", "Midtown/Hells Kitchen", "Elmshurst", "Flushing/Linden Hill", "Port Chester/Pelham Parkway", "Morris Park/Westchester Square/Pelham Bay", "Bulls Head/Heartland Village/New Springviille/Castleton Corners", "Park Slope", "Olinville", "Fordham Heights/Belmont", "South Bronx", "Kingsbridge Heights") 
+Borough <- c("Manhattan", "Manhattan", "Manhattan", "Manhattan", "Manhattan", "Manhattan", "Manhattan", "Manhattan", "Manhattan", "Manhattan", "Queens", "Queens", "Bronx", "Bronx", "Staten Island", "Brooklyn", "Bronx", "Bronx", "Bronx", "Bronx")
+
+Zips <- data.frame(Zipcode, Neighborhood, Borough)
+
+datatable(Zips, options = list(pageLength = 5, columnDefs = list(list(className = 'dt-center', targets = 0:2))), rownames = FALSE)
+```
+
+### Ratings Per Price Category
+
+
+```{r ratings_by_price, , message = FALSE, error = FALSE, fig.width = 7, dpi = 300, fig.cap= "Figure 5.7 - Yelp API Price, Distribution of Review Ratings by Price Category"}
+detach("package:dplyr", unload = TRUE)
+library(dplyr)
+library(ggplot2)
+
+blah <- full_nyc_restaurants_CLEAN %>%
+  filter(price != "NO PRICE") %>%
+  mutate(rating = case_when( 
+    rating %in% c(2.5) ~ 2,
+    rating %in% c(3.5) ~ 3,
+    rating %in% c(4.5) ~ 4,
+    TRUE ~ rating
+  )) %>%
+  select(rating, price) %>%
+  group_by(rating, price) %>%
+  summarize(number = n()) %>%
+  ungroup() %>%
+  filter(is.na(price) == F)
+
+ggplot(blah, aes(fill = price, y = log(number), x = rating)) + geom_bar(position = "dodge", stat = "identity") + scale_fill_brewer(palette = "YlGn") + 
+  labs(title = "Restaurants Grouped by Price and Review Rating", x = "Review Rating (1-5 stars)", y = "Log Count of Rating by Price Categories", fill = "Price by $ Categories") + theme_tufte()
+```
+
+
+Restaurants of each category tend towards four stars, although expensive restaurants cluster more towards 3 stars and above. This could be because expensive restaurants that get bad reviews don't last long in New York City.
+
+## Sentiment
+
+#### All the Feels
+
+It turns out that people have very strong when it comes to restaurants. While the score is a nice shorthand there is a lot more information in their written reviews. We applied positive and negative sentiment to review words using the Bing dictionaries, and found the top contributing words to positive and negative sentiment scores.
+
+### Length of Yelp Reviews
+
+```{r review_length, message = FALSE, error = FALSE, fig.width = 7, dpi = 300, fig.cap= "Figure 6.1 - Stonybrook NYC Yelp Reviews, Average Number of Characters per Yelp Price"}
+detach("package:raster", unload = TRUE)
+detach("package:dplyr", unload = TRUE)
+library(dplyr)
+detach("package:plotly", unload = TRUE)
+detach("package:ggpubr", unload = TRUE)
+detach("package:ggimage", unload = TRUE)
+library(ggplot2)
+library(ggimage)
+library(plotly)
+library(ggpubr)
+library(scales)
+library(ggthemes)
+
+review_length_by_price <- review_lengths_agg %>%
+  filter(!is.na(price)) %>%
+  ggplot(aes(x = price, y = review_length)) +
+  geom_col(width = .5, fill = "#43A2CA") +
+  theme_tufte(ticks = TRUE) +
+  ggtitle("Length of Reviews by Price Category") +
+  ylab("Average Number of Characters Per Review") +
+  xlab("Price Category")
+
+review_length_by_price
+```
+
+Interestingly, the more someone spent on a restaurant the more they seem to have to say about it, for better or worse.
+
+
+### Feeling Sentimental - Top Words
+
+```{r top_sent_wordcloud, message = FALSE, error = FALSE, fig.width = 7, dpi = 300, fig.cap= "Figure 6.2 - Stonybrook NYC Yelp Reviews, Top Sentiment Words Wordcloud"}
+library(dplyr)
+library(png)
+
+review_sentiments_small <- review_words_sentiment %>%
+  group_by(sentiment) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  top_n(40) %>%
+  ungroup()
+  
+set.seed(2019429)
+review_sentiments_small <- review_sentiments_small %>%
+  mutate(angle = 90 * sample(c(0, 1), n(), replace = TRUE, prob = c(60, 40)))
+# review_sentiments_small$price_fact <- factor(review_sentiments_small$price, levels = "$", "$$", "$$$", "$$$$")
+
+ggplot(review_sentiments_small, aes(
+  label = word, size = n, color = sentiment,
+  angle = angle)) +
+  geom_text_wordcloud_area() +
+  scale_size_area(max_size = 18) +
+  theme_minimal()
+```
+
+In the above word cloud blue words represent the most frequent "positive" words and red words represent the most frequent "negative" words, as coded by Bing.
+
+### Overall Highest Sentiment Words
+
+```{r top_sentiment, message = FALSE, error = FALSE, fig.width = 7, dpi = 300, fig.cap= "Figure 6.3 - Stonybrook NYC Yelp Reviews, Top Negative and Positive Sentiment Words"}
+top_sentiment_words <- review_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Top Sentiment Words", 
+       y = "Contribution to sentiment",
+       x = NULL) +
+  coord_flip()  +
+  theme_tufte(ticks = TRUE)
+top_sentiment_words
+```
+
+We can see that traditional sentiment analysis provides some problems, as words that may in some contexts be negative, such as "fried" could in fact be quite positive in a restaurant context. Other words, such as delicious, seem like a safer assumption of enjoyment.
+
+
+### Sentiment Words per Price Category
+
+```{r sentiment_per_price, message = FALSE, error = FALSE, fig.width = 7, dpi = 300, fig.cap= "Figure 6.4 - Stonybrook NYC Yelp Reviews, Top Negative and Positive Sentiment Words per Price Category"}
+
+library(ggpubr)
+
+top_words_1d <- review_words %>%
+  filter(price == "$") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  mutate(price = "$") %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Top Sentiment Words for $", 
+       y = "",
+       x = NULL) +
+  coord_flip()  +
+  theme_tufte(ticks = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 8))
+
+top_words_2d <- review_words %>%
+  filter(price == "$$") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  mutate(price = "$$") %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Top Sentiment Words for $$", 
+       y = "",
+       x = NULL) +
+  coord_flip()  +
+  theme_tufte(ticks = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 8))
+
+top_words_3d <- review_words %>%
+  filter(price == "$$$") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  mutate(price = "$$$") %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Top Sentiment Words for $$$", 
+       y = "Contribution to sentiment",
+       x = NULL) +
+  coord_flip()  +
+  theme_tufte(ticks = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 8))
+
+top_words_4d <- review_words %>%
+  filter(price == "$$$$") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  mutate(price = "$$$$") %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Top Sentiment Words for $$$$", 
+       y = "Contribution to sentiment",
+       x = NULL) +
+  coord_flip()  +
+  theme_tufte(ticks = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 8))
+
+ggarrange(top_words_1d, top_words_2d, top_words_3d, top_words_4d , ncol = 2, nrow = 2)
+```
+
+People don't mince words over minced meats, it seems, as we can clearly see a rise and fall of certain words across prices of restaurants. Disappointment seems to rise in negative popularity with price. Expensive restaurants need to live up to the hype.
+
+
+## Data Sources
+### Yelp Data
+NYC Yelp Price and Score data was collected via calls to the [Yelp API](https://www.yelp.com/developers/documentation/v3) in March 2019. The academic dataset is national, and does not include a great number of New York City restaurants.
+
+### Health Violation Data
+Health code Violation data was retrieved from the [New York City Department of Health and Mental Hygiene (DOHMH) via the NYC OpenData website](https://data.cityofnewyork.us/Health/DOHMH-New-York-City-Restaurant-Inspection-Results/43nn-pn8j) in March 2019.
+
+
+### Yelp Review Data
+NYC Yelp Restaurant Reviews were provided by [Stonybrook University's Outlier Detection Datasets (ODDS)](http://odds.cs.stonybrook.edu/yelpnyc-dataset/) and can be found in the following papers:
+
+Collective Opinion Spam Detection: Bridging Review Networks and Metadata. Shebuti Rayana, Leman Akoglu, ACM SIGKDD, Sydney, Australia, August 10-13, 2015
+
+Collective Opinion Spam Detection using Active Inference. Shebuti Rayana, Leman Akoglu, SIAM SDM, Miami, Florida, USA, May 5-7, 2016
+
+To get the datasets with ground truth please email: srayana@cs.stonybrook.edu
+
+### New York City Census Data
+The data, curated by www.kaggle.com users muonneutrino here:
+https://www.kaggle.com/muonneutrino/new-york-city-census-data#nyc_census_tracts.csv
+
+The data was taken from the American Community Survey 2015 5-year estimates (https://factfinder.census.gov/faces/nav/jsf/pages/index.xhtml).
+
+The census block coordinate data was taken from the FCC Census Block Conversions API (https://www.fcc.gov/general/census-block-conversions-api)
+
+As public data from the US government, this is not subject to copyright within the US and should be considered public domain.
+
+### Full Code
+Full project code can be found at our [project Github page](https://github.com/qmss-gr5063-2019/group_c_nyc_restaurants/), and the project R Markdown file can be found in plaintext at http://columbia.edu/~mw2931/food_for_thought_rmd
+
+### Process Book
+Our working process book can be found at www.columbia.edu/~mw2931/food_for_thought_process.pdf

@@ -1,0 +1,362 @@
+---
+title: "Stonybrook Data Cleaning"
+author: "Michael Weisner"
+date: "4/12/2019"
+output: html_document
+---
+
+
+
+```{r}
+
+library(dplyr)
+library(tidyverse)
+```
+
+```{r, eval = FALSE}
+meta_vars <- c("user_id", "prod_id", "rating", "label", "date")
+metadata <- read_tsv("C:/Users/CPRC Admin/Google Drive/Class/QMSS/Spring 2019/Data Visualization/Data_Viz_Final_Project/Stonybrook_Data/Data/YelpNYC/metadata", col_names = FALSE)
+colnames(metadata) <- meta_vars
+
+write_csv(metadata, "C:/Users/CPRC Admin/Google Drive/Class/QMSS/Spring 2019/Data Visualization/Data_Viz_Final_Project/Stonybrook_Data/Data/YelpNYC/metadata.csv")
+
+```
+
+```{r, eval = FALSE}
+review_vars <- c("user_id", "prod_id", "date", "review")
+review_content <- read_tsv("C:/Users/CPRC Admin/Google Drive/Class/QMSS/Spring 2019/Data Visualization/Data_Viz_Final_Project/Stonybrook_Data/Data/YelpNYC/reviewContent", col_names = FALSE)
+colnames(review_content) <- review_vars
+
+write_csv(review_content, "C:/Users/CPRC Admin/Google Drive/Class/QMSS/Spring 2019/Data Visualization/Data_Viz_Final_Project/Stonybrook_Data/Data/YelpNYC/review_content.csv")
+```
+
+
+```{r, eval = FALSE}
+product_id_mapping <- read_tsv("C:/Users/CPRC Admin/Google Drive/Class/QMSS/Spring 2019/Data Visualization/Data_Viz_Final_Project/Stonybrook_Data/Data/YelpNYC/productIdMapping", col_names = FALSE)
+
+
+colnames(product_id_mapping) <- c("restaurant_name", "prod_id")
+
+write_csv(product_id_mapping, "C:/Users/CPRC Admin/Google Drive/Class/QMSS/Spring 2019/Data Visualization/Data_Viz_Final_Project/Stonybrook_Data/Data/YelpNYC/product_id_mapping.csv")
+```
+
+
+```{r, eval = FALSE}
+review_graph <- read_tsv("C:/Users/CPRC Admin/Google Drive/Class/QMSS/Spring 2019/Data Visualization/Data_Viz_Final_Project/Stonybrook_Data/Data/YelpNYC/reviewGraph", col_names = FALSE)
+
+
+colnames(review_graph) <- c("user_id", "prod_id", "rating")
+
+write_csv(review_graph, "C:/Users/CPRC Admin/Google Drive/Class/QMSS/Spring 2019/Data Visualization/Data_Viz_Final_Project/Stonybrook_Data/Data/YelpNYC/review_graph.csv")
+```
+
+
+```{r, eval = FALSE}
+user_id_mapping <- read_tsv("C:/Users/CPRC Admin/Google Drive/Class/QMSS/Spring 2019/Data Visualization/Data_Viz_Final_Project/Stonybrook_Data/Data/YelpNYC/userIdMapping", col_names = FALSE)
+
+
+colnames(user_id_mapping) <- c("yelp_id", "user_id")
+
+write_csv(user_id_mapping, "C:/Users/CPRC Admin/Google Drive/Class/QMSS/Spring 2019/Data Visualization/Data_Viz_Final_Project/Stonybrook_Data/Data/YelpNYC/user_id_mapping.csv")
+```
+
+Read in Stonybrook Data 
+```{r}
+metadata <- read_csv("raw_data/YelpNYC/metadata.csv")
+review_content <- read_csv("raw_data/YelpNYC/review_content.csv")
+product_id_mapping <- read_csv("raw_data/YelpNYC/product_id_mapping.csv")
+review_graph <- read_csv("raw_data/YelpNYC/review_graph.csv")
+user_id_mapping <- read_csv("raw_data/YelpNYC/user_id_mapping.csv")
+```
+
+
+### Clean Yelp Names
+```{r}
+library(stringi)
+
+#yelp <- read_csv("C:/Users/CPRC Admin/Google Drive/Class/QMSS/Spring 2019/Data Visualization/Data_Viz_Final_Project/full_nyc_restaurants.csv")
+yelp <- read_csv("./raw_data/full_nyc_restaurants.csv")
+
+yelp$name_clean <- yelp$name
+
+
+yelp$name <- gsub("[\\<]", "", yelp$name)
+yelp$name <- gsub("[\\>]", "", yelp$name)
+yelp$name <- gsub("[/]", "", yelp$name)
+
+yelp$name <- if_else(yelp$id == "q2zD96VKoLobG_8_u21LaA", "Sheng Ramen", yelp$name)
+yelp$name <- if_else(yelp$id == "x3_DaW2lWCNovheuZV_nAw", "Private Kitchen", yelp$name)
+yelp$name <- if_else(yelp$id == "FXhSEZfIqjMZh4hR0_8jMQ", "China Xiang", yelp$name)
+yelp$name <- if_else(yelp$id == "Xc7TX67KK0CQnI3YpOAYDA", "Fu Yuan", yelp$name)
+yelp$name <- if_else(yelp$id == "dn8_HgoGUE4IFzwPI6GeLA", "Kai Feng Fu", yelp$name)
+yelp$name <- if_else(yelp$id == "o2z5T8jD7p3kauFwjt_WNw", "Lou De Fong", yelp$name)
+yelp$name <- if_else(yelp$id == "8td6qiBvZ-En6gSpPjXWzQ", "Shanghai Zhen Gong Fu", yelp$name)
+yelp$name <- if_else(yelp$id == "obIX3q93sNKq9VcbbRIfTw", "Xiang Xiang Noodle", yelp$name)
+yelp$name <- if_else(yelp$id == "LBqKeFtF874XRKrrlcDHLg", "Pate", yelp$name)
+yelp$name <- if_else(yelp$id == "V4LITE6wXdAD4LGdTT2_Zg", "Happy Wheelie", yelp$name)
+yelp$name <- if_else(yelp$id == "afjlMhMd_RJxZgE08RnebQ", "Main Street C&L Imperial Taiwanese Gourmet", yelp$name)
+yelp$name <- if_else(yelp$id == "1yGMdJX048NHUAAV-MLlWg", "Szechwan Absolute", yelp$name)
+yelp$name <- if_else(yelp$id == "UMsoaYUQUt-anVxe7gi5Vg", "New Mei Hua", yelp$name)
+yelp$name <- if_else(yelp$id == "bAMTBEztHz4zQqYiIyzf4w", "Chongqing Lao Zao", yelp$name)
+yelp$name <- if_else(yelp$id == "UWdOKWHHCbaN9_oW_m7hjg", "New Yong Ho", yelp$name)
+yelp$name <- if_else(yelp$id == "oKMQj_yVKa1NvlcUjMJpRA", "Dim-Sum House", yelp$name)
+yelp$name <- if_else(yelp$id == "zrV2yUsz1SxymeH51iRBRw", "Chuan Tian Xia", yelp$name)
+yelp$name <- if_else(yelp$id == "7X2sPjfqIeOEYZx6fsY-7A", "New Kitchen", yelp$name)
+yelp$name <- if_else(yelp$id == "y93HF8m24v2ULshCUXAiWw", "Super HK Food Court", yelp$name)
+yelp$name <- if_else(yelp$id == "UNLfH42wkAAChV76hmbdkg", "Eight Jane Food Inc", yelp$name)
+
+
+
+yelp$name_clean <- stri_trans_general(c(yelp$name_clean), "latin-ascii")
+
+
+yelp$name_clean <- gsub("[\\<]", "", yelp$name_clean)
+yelp$name_clean <- gsub("[\\>]", "", yelp$name_clean)
+yelp$name_clean <- gsub("[/]", "", yelp$name_clean)
+
+yelp$name_clean <- if_else(yelp$id == "q2zD96VKoLobG_8_u21LaA", "Sheng Ramen", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "x3_DaW2lWCNovheuZV_nAw", "Private Kitchen", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "FXhSEZfIqjMZh4hR0_8jMQ", "China Xiang", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "Xc7TX67KK0CQnI3YpOAYDA", "Fu Yuan", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "dn8_HgoGUE4IFzwPI6GeLA", "Kai Feng Fu", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "o2z5T8jD7p3kauFwjt_WNw", "Lou De Fong", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "8td6qiBvZ-En6gSpPjXWzQ", "Shanghai Zhen Gong Fu", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "obIX3q93sNKq9VcbbRIfTw", "Xiang Xiang Noodle", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "LBqKeFtF874XRKrrlcDHLg", "Pate", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "V4LITE6wXdAD4LGdTT2_Zg", "Happy Wheelie", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "afjlMhMd_RJxZgE08RnebQ", "Main Street C&L Imperial Taiwanese Gourmet", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "1yGMdJX048NHUAAV-MLlWg", "Szechwan Absolute", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "UMsoaYUQUt-anVxe7gi5Vg", "New Mei Hua", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "bAMTBEztHz4zQqYiIyzf4w", "Chongqing Lao Zao", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "UWdOKWHHCbaN9_oW_m7hjg", "New Yong Ho", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "oKMQj_yVKa1NvlcUjMJpRA", "Dim-Sum House", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "zrV2yUsz1SxymeH51iRBRw", "Chuan Tian Xia", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "7X2sPjfqIeOEYZx6fsY-7A", "New Kitchen", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "y93HF8m24v2ULshCUXAiWw", "Super HK Food Court", yelp$name_clean)
+yelp$name_clean <- if_else(yelp$id == "UNLfH42wkAAChV76hmbdkg", "Eight Jane Food Inc", yelp$name_clean)
+#yelp$name_clean <- if_else(yelp$id == "", "", yelp$name_clean)
+```
+
+
+### Fix Missing Prices
+
+First let's remove plcaes with under 10 reviews as a bit of quality control. Ones with under 10 reviews often don't have full data profiles.
+
+```{r}
+low_reviews <- filter(yelp, review_count <= 10)
+yelp <- filter(yelp, review_count >= 10)
+```
+
+
+
+For restaurants with missing prices, the price rating is estimated using the following criteria:
+"Price per Person: `$`= under `$`10. `$$`=11-30. `$$$`=31-60. `$$$$`= over $61."
+
+This is open to interpretation, but I will focus on main course pricing. If most are in the `$`15-`$`25 range, for instance, it can arguably be assumed that `$$` is an appropriate rating. Below and beyond that would push the range higher or lower. New York definitely errs towards the higher ends of each category. Having a `$$$$$` category and tying each `$` to about `$`10 more would make sense, so `$$` would probably better reflect under `$`20, rather than under `$`30. However we'll still with their metrics for this project.
+
+If there are multiple menus I'm using the Dinner Menu. 
+
+```{r}
+
+miss_price <- filter(yelp, is.na(price)) %>%
+  select(id, url, alias, name, is_closed, review_count, rating, latitude, longitude, price)
+
+# set price via 
+yelp$price <- if_else(yelp$id == "0U9uW93o9DUnAP7r-76LVg", "$$", yelp$price)
+yelp$price <- if_else(yelp$id == "RyVOeKAWLT2srJqpGNFHXw", "$$", yelp$price)
+yelp$price <- if_else(yelp$id == "7B7igqEXqfMEgxV1GOBE6A", "$$", yelp$price)
+yelp$price <- if_else(yelp$id == "gl9UKHI6G-JhIBjjLFOhYA", "$$", yelp$price)
+yelp$price <- if_else(yelp$id == "skhPdP1hEmyZzaJMpP_wIQ", "$$", yelp$price) # hard because many small things, but all around $10
+yelp$price <- if_else(yelp$id == "HodL0fXoF08C3Ir-kLeTtw", "$$", yelp$price) # definitely the lower end of $$
+yelp$price <- if_else(yelp$id == "M-AcAh1C_eQfhzGk6ZmOSQ", "$$", yelp$price) 
+yelp$price <- if_else(yelp$id == "5k_jwjhdFMPUNWhouGNzuA", "$$$", yelp$price) # No listed price but one person said $150 between 3 people with drinks so I'm estimating about $35 for food
+yelp$price <- if_else(yelp$id == "TQzGf4k3HXyMbnNkYKKQSw", "$$$", yelp$price) # problem, two separate menues, one is $$$$ and one is $$, I averaged them
+yelp$price <- if_else(yelp$id == "GnngU5X-RbmrWK1zM-_kxw", "$$", yelp$price)
+
+yelp$price <- if_else(yelp$id == "FYWwW5lcxKzaA98Xgw8bqA", "$$", yelp$price) # no pricing, majority of japanese tapas are $$
+yelp$price <- if_else(yelp$id == "bnsC31tMVSEeKix6E2nlfg", "$$", yelp$price) # Tough, you can easily eat under $30, but not as much with seafood
+yelp$price <- if_else(yelp$id == "EXsorzjQ3y3Oh5-m82lgtg", "$$", yelp$price)
+yelp$price <- if_else(yelp$id == "jLhKLKuNPMTzAMJgEY5DsQ", "$$", yelp$price)
+yelp$price <- if_else(yelp$id == "CgVPSWga9wnoMO9qBFW91g", "$$", yelp$price)
+yelp$price <- if_else(yelp$id == "n8pUdu9-ydHlmeEbYqbApQ", "$$", yelp$price) # shown as $$ on other site, no actual site
+yelp$price <- if_else(yelp$id == "Swjm9no7DRqhThLlf0EHng", "NO PRICE", yelp$price) # no price
+yelp$price <- if_else(yelp$id == "SsPZif4CIL85s318kxL7vA", "$$$", yelp$price) # most mains over $30
+yelp$price <- if_else(yelp$id == "SCoO6GaTZVluTzAsazH5Tg", "$$", yelp$price) #cocktails are expensive but food is cheap
+yelp$price <- if_else(yelp$id == "lAwfazjM5ot64O4A6EAjjQ", "$$", yelp$price)
+
+yelp$price <- if_else(yelp$id == "DDb_WRz8jPPHrTt5Fiu0og", "$$", yelp$price)
+yelp$price <- if_else(yelp$id == "Bo1eW6NCzOMuxIyu6CzutQ", "$$", yelp$price) # someone paid $15 for medium bowl
+yelp$price <- if_else(yelp$id == "vegSCksJy6SI8WUGttLH-w", "$$$", yelp$price) # small dishes at $26, a couple ate for $100
+yelp$price <- if_else(yelp$id == "JDrfVWUn7teXAkmgurtQZg", "$$", yelp$price) # deals are around $15
+yelp$price <- if_else(yelp$id == "aCeHq1ZWKCI_wux0vOW1nA", "$$", yelp$price) # cheaper but most food over $10
+yelp$price <- if_else(yelp$id == "_B0NHhM3GmirV68XE5csSA", "$$", yelp$price)
+yelp$price <- if_else(yelp$id == "8dSqyc5rHkqRa_oHk2v3xw", "$", yelp$price) # 4 people under $45
+yelp$price <- if_else(yelp$id == "nXoaGAhH6tNDQEE871V-ig", "NO PRICE", yelp$price)
+yelp$price <- if_else(yelp$id == "pqGGfA3Vm9srfTIJLgL0Ew", "$", yelp$price) # Everything under $10, but you'd probably get a few
+yelp$price <- if_else(yelp$id == "ki4hgtRa7fWcEpBu0cyM4A", "$$", yelp$price) # complaints of overpriced
+
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+yelp$price <- if_else(yelp$id == "", "", yelp$price)
+#yelp$price <- if_else(yelp$id == "", "", yelp$price)
+
+
+
+# now fix price_num
+for (i in 1:nrow(yelp)){
+
+  yelp$price_num[i] <- if_else(is.na(yelp$price_num)[i], as.numeric(nchar(yelp$price[i])), yelp$price_num[i] )
+
+}
+
+yelp$price_num <- if_else(yelp$price == "NO PRICE", 0, yelp$price_num)
+
+```
+
+```{r}
+write_csv(yelp, "./raw_data/full_nyc_restaurants_CLEAN.csv")
+```
+
+
+### Names with strange punctuation
+```{r}
+weird_names <- yelp %>%
+  select(name, name_clean) %>%
+  filter(grepl("[^ -~]", name))
+
+weird_names
+```
+
+### Non English and Non Unicode Characters
+```{r}
+restaurants_noneng <- yelp[grepl("[^\x01-\x7F]+", yelp$name),]
+
+restaurants_nonuni <- yelp[grepl("[^\u0001-\u007F]+", yelp$name),]
+
+restaurants_noneng
+restaurants_nonuni
+```
+
+
+
+```{r}
+# yelp <- read_csv("./raw_data/full_nyc_restaurants_CLEAN.csv")
+```
+
+```{r}
+library(stringi)
+yelp$mapping_names <- yelp$name_clean
+
+yelp$mapping_names <- if_else(yelp$name == "Peppino's Brick Oven Pizza & Restaurant", "Peppino's", yelp$mapping_names)
+yelp$mapping_names <- if_else(yelp$name == "Carmine's Italian Restaurant - Times Square", "Carmine's", yelp$mapping_names)
+yelp$mapping_names <- tolower(yelp$mapping_names)
+
+
+
+merge_test <- merge(review_content, product_id_mapping, by = "prod_id")
+length(unique(merge_test$prod_id))
+join_test <- inner_join(review_content, product_id_mapping)
+length(unique(join_test$prod_id))
+#merge_test$restaurant_name <- gsub("'", "'", merge_test$restaurant_name)
+#merge_test$restaurant_name <- gsub("`", "'", merge_test$restaurant_name)
+#merge_test$restaurant_name <- gsub("'", "'", merge_test$restaurant_name)
+#merge_test$restaurant_name <- gsub("?", "'", merge_test$restaurant_name)
+
+
+merge_full <- merge_test %>%
+  mutate(mapping_names = tolower(restaurant_name))
+
+
+merge_full$mapping_names <- stri_trans_general(c(merge_full$mapping_names), "latin-ascii")
+
+merge_full$mapping_names <- if_else(merge_full$mapping_names == "nai tapas bar", "nai tapas", merge_full$mapping_names)
+merge_full$mapping_names <- if_else(merge_full$mapping_names == "rattle a?~n' hum", "rattle 'n' hum", merge_full$mapping_names)
+merge_full$mapping_names <- if_else(merge_full$mapping_names == "eataly nyc", "eataly", merge_full$mapping_names)
+merge_full$mapping_names <- if_else(merge_full$mapping_names == "dig inn seasonal market", "dig inn", merge_full$mapping_names)
+
+merge_matches <- left_join(merge_full, yelp)
+merge_matches <- merge_matches[!is.na(merge_matches$id), ]
+write_csv(merge_matches, "./raw_data/review_merged_data.csv")
+merge_full <- left_join(merge_full, yelp)
+
+sort(unique(merge_full$mapping_names[is.na(merge_full$id)]))
+length(unique(merge_full$prod_id))
+```
+
+
+```{r}
+weird_names <- yelp %>%
+  select(name, name_clean) %>%
+  filter(grepl("[^ -~]", name))
+
+weird_names
+```
+
+
+```{r}
+
+closed_restaurants_mapping_names <- c("snack", "sud vino & cucina", "hunter's")
+
+not_closed_restaurants_mapping_names <- c("rattle 'n' hum", "the otheroom")
+
+closed_restaurants <- yelp[1, ]
+closed_restaurants$id[1] <- ""
+closed_restaurants$alias[1] <- "snack-new-york-2"
+closed_restaurants$name[1] <- "Snack"
+closed_restaurants$image_url[1] <- ""
+closed_restaurants$is_closed[1] <- TRUE
+closed_restaurants$url[1] <- "https://www.yelp.com/biz/snack-new-york-2"
+closed_restaurants$review_count <- 197L
+closed_restaurants$rating[1] <- 4.0
+closed_restaurants$latitude[1] <- 40.7257543
+closed_restaurants$longitude[1] <- -74.0042788
+closed_restaurants$transactions[1] <- NA
+closed_restaurants$price[1] <- "$$"
+closed_restaurants$distance[1] <- NA
+closed_restaurants$street_address[1] <- "105 Thompson St"
+closed_restaurants$city[1] <- "New York City"
+closed_restaurants$state[1] <- "NY"
+closed_restaurants$zip_code[1] <- "10012"
+closed_restaurants$categories[1] <- ""
+closed_restaurants$full_address[1] <- "105 Thompson St, New York, NY 10012"
+closed_restaurants$borough[1] <- "Manhattan"
+closed_restaurants$price_num[1] <- "2"
+closed_restaurants$mapping_names[1] <- closed_restaurants$name[1]
+
+
+
+```
+
+
+```{r}
+#  write_csv(merge_full, "./raw_data/review_merged_data.csv")
+```
+
+
+
+
+
+
+
+
+
+
+

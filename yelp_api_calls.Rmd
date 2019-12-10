@@ -1,0 +1,521 @@
+---
+title: "Data Cleaning"
+author: "Michael Weisner"
+date: "4/9/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# devtools::install_github("OmaymaS/yelpr")
+library(yelpr)
+library(jsonlite)
+library(dplyr)
+library(tidyverse)
+key <- as.character(read_file("~/Desktop/api_keys/yelp_api_key.txt"))
+
+```
+
+# All NYC
+```{r}
+nyc_restaurants <- business_search(api_key = key,
+                location = 'New York City',
+                term = "Restaurant",
+                limit = 50)
+
+varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+restaurants_df <- data.frame(cbind(as.character(nyc_restaurants$businesses$id), 
+                        as.character(nyc_restaurants$businesses$alias), 
+                        as.character(nyc_restaurants$businesses$name),
+                        as.character(nyc_restaurants$businesses$image_url), 
+                        as.logical(nyc_restaurants$businesses$is_closed),
+                        as.character(nyc_restaurants$businesses$url),
+                        as.numeric(nyc_restaurants$businesses$review_count),
+                        as.numeric(nyc_restaurants$businesses$rating),
+                        as.numeric(nyc_restaurants$businesses$coordinates$latitude),
+                        as.numeric(nyc_restaurants$businesses$coordinates$longitude),
+                        as.character(nyc_restaurants$businesses$transactions), 
+                        as.character(nyc_restaurants$businesses$price),
+                        as.numeric(nyc_restaurants$businesses$distance),
+                        as.character(nyc_restaurants$businesses$location$address1),
+                        as.character(nyc_restaurants$businesses$location$city),
+                        as.character(nyc_restaurants$businesses$location$state),
+                        as.numeric(nyc_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(restaurants_df) <- varnames
+
+# rest_cats <- data.frame(unlist(nyc_restaurants$businesses$categories[[1]]))
+
+#restaurants_df$categories <- nyc_restaurants$businesses$categories[[1]]
+
+for (i in 1:ncol(restaurants_df)) {
+  restaurants_df$categories[i] <- paste0(flatten(nyc_restaurants$businesses$categories[[i]]), sep = ", ", collapse = "")
+  restaurants_df$full_address[i] <- paste0(flatten(nyc_restaurants$businesses$location$display_address[i]), sep = ", ", collapse = "")
+}
+
+for (i in 1:19) {
+  
+    varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+
+  offset_val <- i * 50
+  new_restaurants <- business_search(api_key = key,
+                location = 'New York City',
+                term = "Restaurant",
+                limit = 50,
+                offset = offset_val)
+  
+new_restaurants_df <- data.frame(cbind(as.character(new_restaurants$businesses$id), 
+                        as.character(new_restaurants$businesses$alias), 
+                        as.character(new_restaurants$businesses$name),
+                        as.character(new_restaurants$businesses$image_url), 
+                        as.logical(new_restaurants$businesses$is_closed),
+                        as.character(new_restaurants$businesses$url),
+                        as.numeric(new_restaurants$businesses$review_count),
+                        as.numeric(new_restaurants$businesses$rating),
+                        as.numeric(new_restaurants$businesses$coordinates$latitude),
+                        as.numeric(new_restaurants$businesses$coordinates$longitude),
+                        as.character(new_restaurants$businesses$transactions), 
+                        as.character(new_restaurants$businesses$price),
+                        as.numeric(new_restaurants$businesses$distance),
+                        as.character(new_restaurants$businesses$location$address1),
+                        as.character(new_restaurants$businesses$location$city),
+                        as.character(new_restaurants$businesses$location$state),
+                        as.numeric(new_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(new_restaurants_df) <- varnames
+  
+for (j in 1:ncol(new_restaurants_df)) {
+  
+  new_restaurants_df$full_address[j] <- paste0(flatten(new_restaurants$businesses$location$display_address[j]), sep = ", ", collapse = "")
+  
+  new_restaurants_df$categories[j] <- paste0(flatten(new_restaurants$businesses$categories[[j]]), sep = ", ", collapse = "")
+  
+}
+  
+  restaurants_df <- rbind(restaurants_df, new_restaurants_df)
+}
+
+restaurants_df_backup <- restaurants_df
+write_csv(restaurants_df, "./nyc_restaurants.csv", na = "NA")
+```
+
+# Manhattan Restaurants
+```{r}
+nyc_restaurants <- business_search(api_key = key,
+                location = 'Manhattan',
+                term = "Restaurant",
+                limit = 50)
+
+varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+restaurants_df <- data.frame(cbind(as.character(nyc_restaurants$businesses$id), 
+                        as.character(nyc_restaurants$businesses$alias), 
+                        as.character(nyc_restaurants$businesses$name),
+                        as.character(nyc_restaurants$businesses$image_url), 
+                        as.logical(nyc_restaurants$businesses$is_closed),
+                        as.character(nyc_restaurants$businesses$url),
+                        as.numeric(nyc_restaurants$businesses$review_count),
+                        as.numeric(nyc_restaurants$businesses$rating),
+                        as.numeric(nyc_restaurants$businesses$coordinates$latitude),
+                        as.numeric(nyc_restaurants$businesses$coordinates$longitude),
+                        as.character(nyc_restaurants$businesses$transactions), 
+                        as.character(nyc_restaurants$businesses$price),
+                        as.numeric(nyc_restaurants$businesses$distance),
+                        as.character(nyc_restaurants$businesses$location$address1),
+                        as.character(nyc_restaurants$businesses$location$city),
+                        as.character(nyc_restaurants$businesses$location$state),
+                        as.numeric(nyc_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(restaurants_df) <- varnames
+
+# rest_cats <- data.frame(unlist(nyc_restaurants$businesses$categories[[1]]))
+
+#restaurants_df$categories <- nyc_restaurants$businesses$categories[[1]]
+
+for (i in 1:ncol(restaurants_df)) {
+  restaurants_df$categories[i] <- paste0(flatten(nyc_restaurants$businesses$categories[[i]]), sep = ", ", collapse = "")
+  restaurants_df$full_address[i] <- paste0(flatten(nyc_restaurants$businesses$location$display_address[i]), sep = ", ", collapse = "")
+}
+
+for (i in 1:19) {
+  
+    varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+
+  offset_val <- i * 50
+  new_restaurants <- business_search(api_key = key,
+                location = 'Manhattan',
+                term = "Restaurant",
+                limit = 50,
+                offset = offset_val)
+  
+new_restaurants_df <- data.frame(cbind(as.character(new_restaurants$businesses$id), 
+                        as.character(new_restaurants$businesses$alias), 
+                        as.character(new_restaurants$businesses$name),
+                        as.character(new_restaurants$businesses$image_url), 
+                        as.logical(new_restaurants$businesses$is_closed),
+                        as.character(new_restaurants$businesses$url),
+                        as.numeric(new_restaurants$businesses$review_count),
+                        as.numeric(new_restaurants$businesses$rating),
+                        as.numeric(new_restaurants$businesses$coordinates$latitude),
+                        as.numeric(new_restaurants$businesses$coordinates$longitude),
+                        as.character(new_restaurants$businesses$transactions), 
+                        as.character(new_restaurants$businesses$price),
+                        as.numeric(new_restaurants$businesses$distance),
+                        as.character(new_restaurants$businesses$location$address1),
+                        as.character(new_restaurants$businesses$location$city),
+                        as.character(new_restaurants$businesses$location$state),
+                        as.numeric(new_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(new_restaurants_df) <- varnames
+  
+for (j in 1:ncol(new_restaurants_df)) {
+  
+  new_restaurants_df$full_address[j] <- paste0(flatten(new_restaurants$businesses$location$display_address[j]), sep = ", ", collapse = "")
+  
+  new_restaurants_df$categories[j] <- paste0(flatten(new_restaurants$businesses$categories[[j]]), sep = ", ", collapse = "")
+  
+}
+  
+  restaurants_df <- rbind(restaurants_df, new_restaurants_df)
+}
+
+restaurants_df_backup <- restaurants_df
+write_csv(restaurants_df, "./manhattan_restaurants.csv", na = "NA")
+```
+
+# Brooklyn
+```{r}
+nyc_restaurants <- business_search(api_key = key,
+                location = 'Brooklyn',
+                term = "Restaurant",
+                limit = 50)
+
+varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+restaurants_df <- data.frame(cbind(as.character(nyc_restaurants$businesses$id), 
+                        as.character(nyc_restaurants$businesses$alias), 
+                        as.character(nyc_restaurants$businesses$name),
+                        as.character(nyc_restaurants$businesses$image_url), 
+                        as.logical(nyc_restaurants$businesses$is_closed),
+                        as.character(nyc_restaurants$businesses$url),
+                        as.numeric(nyc_restaurants$businesses$review_count),
+                        as.numeric(nyc_restaurants$businesses$rating),
+                        as.numeric(nyc_restaurants$businesses$coordinates$latitude),
+                        as.numeric(nyc_restaurants$businesses$coordinates$longitude),
+                        as.character(nyc_restaurants$businesses$transactions), 
+                        as.character(nyc_restaurants$businesses$price),
+                        as.numeric(nyc_restaurants$businesses$distance),
+                        as.character(nyc_restaurants$businesses$location$address1),
+                        as.character(nyc_restaurants$businesses$location$city),
+                        as.character(nyc_restaurants$businesses$location$state),
+                        as.numeric(nyc_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(restaurants_df) <- varnames
+
+# rest_cats <- data.frame(unlist(nyc_restaurants$businesses$categories[[1]]))
+
+#restaurants_df$categories <- nyc_restaurants$businesses$categories[[1]]
+
+for (i in 1:ncol(restaurants_df)) {
+  restaurants_df$categories[i] <- paste0(flatten(nyc_restaurants$businesses$categories[[i]]), sep = ", ", collapse = "")
+  restaurants_df$full_address[i] <- paste0(flatten(nyc_restaurants$businesses$location$display_address[i]), sep = ", ", collapse = "")
+}
+
+for (i in 1:19) {
+  
+    varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+
+  offset_val <- i * 50
+  new_restaurants <- business_search(api_key = key,
+                location = 'Brooklyn',
+                term = "Restaurant",
+                limit = 50,
+                offset = offset_val)
+  
+new_restaurants_df <- data.frame(cbind(as.character(new_restaurants$businesses$id), 
+                        as.character(new_restaurants$businesses$alias), 
+                        as.character(new_restaurants$businesses$name),
+                        as.character(new_restaurants$businesses$image_url), 
+                        as.logical(new_restaurants$businesses$is_closed),
+                        as.character(new_restaurants$businesses$url),
+                        as.numeric(new_restaurants$businesses$review_count),
+                        as.numeric(new_restaurants$businesses$rating),
+                        as.numeric(new_restaurants$businesses$coordinates$latitude),
+                        as.numeric(new_restaurants$businesses$coordinates$longitude),
+                        as.character(new_restaurants$businesses$transactions), 
+                        as.character(new_restaurants$businesses$price),
+                        as.numeric(new_restaurants$businesses$distance),
+                        as.character(new_restaurants$businesses$location$address1),
+                        as.character(new_restaurants$businesses$location$city),
+                        as.character(new_restaurants$businesses$location$state),
+                        as.numeric(new_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(new_restaurants_df) <- varnames
+  
+for (j in 1:ncol(new_restaurants_df)) {
+  
+  new_restaurants_df$full_address[j] <- paste0(flatten(new_restaurants$businesses$location$display_address[j]), sep = ", ", collapse = "")
+  
+  new_restaurants_df$categories[j] <- paste0(flatten(new_restaurants$businesses$categories[[j]]), sep = ", ", collapse = "")
+  
+}
+  
+  restaurants_df <- rbind(restaurants_df, new_restaurants_df)
+}
+
+restaurants_df_backup <- restaurants_df
+write_csv(restaurants_df, "./Brooklyn_restaurants.csv", na = "NA")
+```
+
+# Queens
+```{r}
+nyc_restaurants <- business_search(api_key = key,
+                location = 'Queens',
+                term = "Restaurant",
+                limit = 50)
+
+varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+restaurants_df <- data.frame(cbind(as.character(nyc_restaurants$businesses$id), 
+                        as.character(nyc_restaurants$businesses$alias), 
+                        as.character(nyc_restaurants$businesses$name),
+                        as.character(nyc_restaurants$businesses$image_url), 
+                        as.logical(nyc_restaurants$businesses$is_closed),
+                        as.character(nyc_restaurants$businesses$url),
+                        as.numeric(nyc_restaurants$businesses$review_count),
+                        as.numeric(nyc_restaurants$businesses$rating),
+                        as.numeric(nyc_restaurants$businesses$coordinates$latitude),
+                        as.numeric(nyc_restaurants$businesses$coordinates$longitude),
+                        as.character(nyc_restaurants$businesses$transactions), 
+                        as.character(nyc_restaurants$businesses$price),
+                        as.numeric(nyc_restaurants$businesses$distance),
+                        as.character(nyc_restaurants$businesses$location$address1),
+                        as.character(nyc_restaurants$businesses$location$city),
+                        as.character(nyc_restaurants$businesses$location$state),
+                        as.numeric(nyc_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(restaurants_df) <- varnames
+
+# rest_cats <- data.frame(unlist(nyc_restaurants$businesses$categories[[1]]))
+
+#restaurants_df$categories <- nyc_restaurants$businesses$categories[[1]]
+
+for (i in 1:ncol(restaurants_df)) {
+  restaurants_df$categories[i] <- paste0(flatten(nyc_restaurants$businesses$categories[[i]]), sep = ", ", collapse = "")
+  restaurants_df$full_address[i] <- paste0(flatten(nyc_restaurants$businesses$location$display_address[i]), sep = ", ", collapse = "")
+}
+
+for (i in 1:19) {
+  
+    varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+
+  offset_val <- i * 50
+  new_restaurants <- business_search(api_key = key,
+                location = 'Queens',
+                term = "Restaurant",
+                limit = 50,
+                offset = offset_val)
+  
+new_restaurants_df <- data.frame(cbind(as.character(new_restaurants$businesses$id), 
+                        as.character(new_restaurants$businesses$alias), 
+                        as.character(new_restaurants$businesses$name),
+                        as.character(new_restaurants$businesses$image_url), 
+                        as.logical(new_restaurants$businesses$is_closed),
+                        as.character(new_restaurants$businesses$url),
+                        as.numeric(new_restaurants$businesses$review_count),
+                        as.numeric(new_restaurants$businesses$rating),
+                        as.numeric(new_restaurants$businesses$coordinates$latitude),
+                        as.numeric(new_restaurants$businesses$coordinates$longitude),
+                        as.character(new_restaurants$businesses$transactions), 
+                        as.character(new_restaurants$businesses$price),
+                        as.numeric(new_restaurants$businesses$distance),
+                        as.character(new_restaurants$businesses$location$address1),
+                        as.character(new_restaurants$businesses$location$city),
+                        as.character(new_restaurants$businesses$location$state),
+                        as.numeric(new_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(new_restaurants_df) <- varnames
+  
+for (j in 1:ncol(new_restaurants_df)) {
+  
+  new_restaurants_df$full_address[j] <- paste0(flatten(new_restaurants$businesses$location$display_address[j]), sep = ", ", collapse = "")
+  
+  new_restaurants_df$categories[j] <- paste0(flatten(new_restaurants$businesses$categories[[j]]), sep = ", ", collapse = "")
+  
+}
+  
+  restaurants_df <- rbind(restaurants_df, new_restaurants_df)
+}
+
+restaurants_df_backup <- restaurants_df
+write_csv(restaurants_df, "./Queens_restaurants.csv", na = "NA")
+```
+
+
+# Bronx
+```{r}
+nyc_restaurants <- business_search(api_key = key,
+                location = 'Bronx',
+                term = "Restaurant",
+                limit = 50)
+
+varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+restaurants_df <- data.frame(cbind(as.character(nyc_restaurants$businesses$id), 
+                        as.character(nyc_restaurants$businesses$alias), 
+                        as.character(nyc_restaurants$businesses$name),
+                        as.character(nyc_restaurants$businesses$image_url), 
+                        as.logical(nyc_restaurants$businesses$is_closed),
+                        as.character(nyc_restaurants$businesses$url),
+                        as.numeric(nyc_restaurants$businesses$review_count),
+                        as.numeric(nyc_restaurants$businesses$rating),
+                        as.numeric(nyc_restaurants$businesses$coordinates$latitude),
+                        as.numeric(nyc_restaurants$businesses$coordinates$longitude),
+                        as.character(nyc_restaurants$businesses$transactions), 
+                        as.character(nyc_restaurants$businesses$price),
+                        as.numeric(nyc_restaurants$businesses$distance),
+                        as.character(nyc_restaurants$businesses$location$address1),
+                        as.character(nyc_restaurants$businesses$location$city),
+                        as.character(nyc_restaurants$businesses$location$state),
+                        as.numeric(nyc_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(restaurants_df) <- varnames
+
+# rest_cats <- data.frame(unlist(nyc_restaurants$businesses$categories[[1]]))
+
+#restaurants_df$categories <- nyc_restaurants$businesses$categories[[1]]
+
+for (i in 1:ncol(restaurants_df)) {
+  restaurants_df$categories[i] <- paste0(flatten(nyc_restaurants$businesses$categories[[i]]), sep = ", ", collapse = "")
+  restaurants_df$full_address[i] <- paste0(flatten(nyc_restaurants$businesses$location$display_address[i]), sep = ", ", collapse = "")
+}
+
+for (i in 1:19) {
+  
+    varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+
+  offset_val <- i * 50
+  new_restaurants <- business_search(api_key = key,
+                location = 'Bronx',
+                term = "Restaurant",
+                limit = 50,
+                offset = offset_val)
+  
+new_restaurants_df <- data.frame(cbind(as.character(new_restaurants$businesses$id), 
+                        as.character(new_restaurants$businesses$alias), 
+                        as.character(new_restaurants$businesses$name),
+                        as.character(new_restaurants$businesses$image_url), 
+                        as.logical(new_restaurants$businesses$is_closed),
+                        as.character(new_restaurants$businesses$url),
+                        as.numeric(new_restaurants$businesses$review_count),
+                        as.numeric(new_restaurants$businesses$rating),
+                        as.numeric(new_restaurants$businesses$coordinates$latitude),
+                        as.numeric(new_restaurants$businesses$coordinates$longitude),
+                        as.character(new_restaurants$businesses$transactions), 
+                        as.character(new_restaurants$businesses$price),
+                        as.numeric(new_restaurants$businesses$distance),
+                        as.character(new_restaurants$businesses$location$address1),
+                        as.character(new_restaurants$businesses$location$city),
+                        as.character(new_restaurants$businesses$location$state),
+                        as.numeric(new_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(new_restaurants_df) <- varnames
+  
+for (j in 1:ncol(new_restaurants_df)) {
+  
+  new_restaurants_df$full_address[j] <- paste0(flatten(new_restaurants$businesses$location$display_address[j]), sep = ", ", collapse = "")
+  
+  new_restaurants_df$categories[j] <- paste0(flatten(new_restaurants$businesses$categories[[j]]), sep = ", ", collapse = "")
+  
+}
+  
+  restaurants_df <- rbind(restaurants_df, new_restaurants_df)
+}
+
+restaurants_df_backup <- restaurants_df
+write_csv(restaurants_df, "./Bronx_restaurants.csv", na = "NA")
+```
+
+
+# Staten Island
+```{r}
+nyc_restaurants <- business_search(api_key = key,
+                location = 'Staten Island',
+                term = "Restaurant",
+                limit = 50)
+
+varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+restaurants_df <- data.frame(cbind(as.character(nyc_restaurants$businesses$id), 
+                        as.character(nyc_restaurants$businesses$alias), 
+                        as.character(nyc_restaurants$businesses$name),
+                        as.character(nyc_restaurants$businesses$image_url), 
+                        as.logical(nyc_restaurants$businesses$is_closed),
+                        as.character(nyc_restaurants$businesses$url),
+                        as.numeric(nyc_restaurants$businesses$review_count),
+                        as.numeric(nyc_restaurants$businesses$rating),
+                        as.numeric(nyc_restaurants$businesses$coordinates$latitude),
+                        as.numeric(nyc_restaurants$businesses$coordinates$longitude),
+                        as.character(nyc_restaurants$businesses$transactions), 
+                        as.character(nyc_restaurants$businesses$price),
+                        as.numeric(nyc_restaurants$businesses$distance),
+                        as.character(nyc_restaurants$businesses$location$address1),
+                        as.character(nyc_restaurants$businesses$location$city),
+                        as.character(nyc_restaurants$businesses$location$state),
+                        as.numeric(nyc_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(restaurants_df) <- varnames
+
+# rest_cats <- data.frame(unlist(nyc_restaurants$businesses$categories[[1]]))
+
+#restaurants_df$categories <- nyc_restaurants$businesses$categories[[1]]
+
+for (i in 1:ncol(restaurants_df)) {
+  restaurants_df$categories[i] <- paste0(flatten(nyc_restaurants$businesses$categories[[i]]), sep = ", ", collapse = "")
+  restaurants_df$full_address[i] <- paste0(flatten(nyc_restaurants$businesses$location$display_address[i]), sep = ", ", collapse = "")
+}
+
+for (i in 1:19) {
+  
+    varnames <- c("id", "alias", "name", "image_url", "is_closed", "url", "review_count", "rating", "latitude", "longitude", "transactions", "price", "distance", "street_address", "city", "state", "zip_code")
+
+  offset_val <- i * 50
+  new_restaurants <- business_search(api_key = key,
+                location = 'Staten Island',
+                term = "Restaurant",
+                limit = 50,
+                offset = offset_val)
+  
+new_restaurants_df <- data.frame(cbind(as.character(new_restaurants$businesses$id), 
+                        as.character(new_restaurants$businesses$alias), 
+                        as.character(new_restaurants$businesses$name),
+                        as.character(new_restaurants$businesses$image_url), 
+                        as.logical(new_restaurants$businesses$is_closed),
+                        as.character(new_restaurants$businesses$url),
+                        as.numeric(new_restaurants$businesses$review_count),
+                        as.numeric(new_restaurants$businesses$rating),
+                        as.numeric(new_restaurants$businesses$coordinates$latitude),
+                        as.numeric(new_restaurants$businesses$coordinates$longitude),
+                        as.character(new_restaurants$businesses$transactions), 
+                        as.character(new_restaurants$businesses$price),
+                        as.numeric(new_restaurants$businesses$distance),
+                        as.character(new_restaurants$businesses$location$address1),
+                        as.character(new_restaurants$businesses$location$city),
+                        as.character(new_restaurants$businesses$location$state),
+                        as.numeric(new_restaurants$businesses$location$zip_code)), stringsAsFactors = FALSE)
+
+colnames(new_restaurants_df) <- varnames
+  
+for (j in 1:ncol(new_restaurants_df)) {
+  
+  new_restaurants_df$full_address[j] <- paste0(flatten(new_restaurants$businesses$location$display_address[j]), sep = ", ", collapse = "")
+  
+  new_restaurants_df$categories[j] <- paste0(flatten(new_restaurants$businesses$categories[[j]]), sep = ", ", collapse = "")
+  
+}
+  
+  restaurants_df <- rbind(restaurants_df, new_restaurants_df)
+}
+
+restaurants_df_backup <- restaurants_df
+write_csv(restaurants_df, "./StatenIsland_restaurants.csv", na = "NA")
+```
+

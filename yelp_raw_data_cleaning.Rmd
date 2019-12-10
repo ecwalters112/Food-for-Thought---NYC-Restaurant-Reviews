@@ -1,0 +1,131 @@
+---
+title: "data_cleaning"
+author: "Michael Weisner"
+date: "4/12/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Data
+```{r message = FALSE}
+library(dplyr)
+library(tidyverse)
+
+nyc_restaurants <- read_csv("./raw_data/nyc_restaurants.csv")
+brooklyn_restaurants <- read_csv("./raw_data/Brooklyn_restaurants.csv")
+bronx_restaurants <- read_csv("./raw_data/Bronx_restaurants.csv")
+manhattan_restaurants <- read_csv("./raw_data/manhattan_restaurants.csv")
+statenisland_restaurants <- read_csv("./raw_data/StatenIsland_restaurants.csv")
+queens_restaurants <- read_csv("./raw_data/Queens_restaurants.csv")
+```
+
+# Assign Boroughs
+```{r}
+nyc_restaurants$borough <- "All Boroughs"
+brooklyn_restaurants$borough <- "Brooklyn"
+bronx_restaurants$borough <- "Bronx"
+manhattan_restaurants$borough <- "Manhattan"
+queens_restaurants$borough <- "Queens"
+statenisland_restaurants$borough <- "Staten Island"
+```
+
+
+```{r}
+all_nyc <- rbind(brooklyn_restaurants, bronx_restaurants, manhattan_restaurants, queens_restaurants,statenisland_restaurants)
+```
+
+```{r}
+state_NAs <- all_nyc[is.na(all_nyc$state), ] # none!
+state_NAs %>%
+  arrange(id) %>%
+  select(id, name, state, full_address, borough, categories, everything())
+
+state_non_ny <- all_nyc[all_nyc$state != "NY", ] # 169
+state_non_ny %>%
+  arrange(id) %>%
+  select(id, name, state, full_address, borough, categories, everything())
+
+duplicate_ids <- all_nyc$id[duplicated(all_nyc$id)]
+
+all_nyc[all_nyc$id %in% duplicate_ids, ] %>%
+  arrange(id) %>%
+  select(id, name, categories, full_address, borough, everything())
+```
+## Remove Duplicates
+
+```{r}
+all_nyc$duplicate_restaurant <- duplicated(all_nyc$id)
+
+all_nyc <- all_nyc %>%
+  filter(duplicate_restaurant == "FALSE")
+
+```
+
+```{r}
+full_ids <- c(nyc_restaurants$id, all_nyc$id)
+
+full_ids_df <- data.frame(full_ids, duplicated(full_ids))
+full_ids_df %>%
+  filter(duplicated.full_ids. == TRUE)
+
+non_dup <- as.character(full_ids_df$full_ids[full_ids_df$duplicated.full_ids. == FALSE])
+nyc_restaurants %>%
+  filter(id %in% non_dup)
+all_nyc %>%
+  filter(id %in% non_dup)
+```
+
+```{r}
+"%ni%" <- Negate("%in%")
+extras <- non_dup[non_dup %ni% all_nyc$id]
+
+extra_restaurants <- nyc_restaurants %>%
+  filter(id %in% extras)
+
+all_nyc <- all_nyc %>%
+  select(-duplicate_restaurant)
+
+all_nyc <- rbind(all_nyc, extra_restaurants)
+
+all_nyc[duplicated(all_nyc$id), ]
+```
+
+## Clean State to just NY
+```{r}
+unique(all_nyc$state)
+
+all_nyc <- all_nyc %>%
+  filter(state == "NY")
+```
+
+# Numeric Price Value
+```{r}
+all_nyc$price_num <- NaN
+
+all_nyc <- all_nyc %>%
+  mutate(price_num = if_else(all_nyc$price == "$", 1, price_num)) 
+all_nyc <- all_nyc%>%
+  mutate(price_num = if_else(all_nyc$price == "$$", 2, price_num))
+all_nyc <- all_nyc%>%
+  mutate(price_num = if_else(all_nyc$price == "$$$", 3, price_num))
+all_nyc <- all_nyc%>%
+  mutate(price_num = if_else(all_nyc$price == "$$$$", 4, price_num))
+
+summary(all_nyc$price_num)
+```
+
+
+So now we have 4098 unique restaurants
+
+```{r}
+write_csv(all_nyc, "./full_nyc_restaurants.csv", na = "NA" )
+```
+
+
+
+
+
+

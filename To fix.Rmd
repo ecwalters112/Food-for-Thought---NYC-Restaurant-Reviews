@@ -1,0 +1,22 @@
+This replaces the chunk under "restaurant chains break trends"
+
+```{r, fig.width = 7}
+content_m <- paste("Current Grade:",mcdonalds$GRADE,"<br/>",
+                 "Average Grade:",round(mcdonalds$average_grade,2),"<br/>",
+                 "Average Score per Inspection:", round(mcdonalds$scoreperinspect),2)
+
+
+pal_m = colorNumeric(c("#F0FF33", "#FF0028"), domain = (mcdonalds$score/mcdonalds$inspections))
+
+leaflet() %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+    addCircles(data = starbucks, col = ~pal1(score/inspections), opacity = 1, popup = content, radius = 13, group = "Starbucks") %>% 
+  addCircles(data = mcdonalds, col = ~pal_m(score/inspections), opacity = 1, popup = content_m, radius = 13, group = "McDonalds") %>% 
+    addLegend(pal = pal1, values = starbucks$score/starbucks$inspections, group = "Starbucks", title = "Score Per Inspection (Starbucks)", bins= 5) %>% 
+  addLegend(pal = pal_m, values = mcdonalds$score/mcdonalds$inspections, group = "McDonalds", title = "Score Per Inspection (McDonalds)", bins= 5) %>% 
+  setView(lng = -73.958701, 40.787435, zoom = 12) %>% 
+  addLayersControl(
+    baseGroups = c("Starbucks", "McDonalds"),
+    options = layersControlOptions(collapsed = F)
+  )
+```

@@ -1,0 +1,48 @@
+---
+title: "dohmh_data_cleaning"
+author: "Michael Weisner"
+date: "4/22/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Data
+Dataset from [DOHMH Website] (https://data.cityofnewyork.us/Health/DOHMH-New-York-City-Restaurant-Inspection-Results/43nn-pn8j)
+
+```{r}
+library(dplyr)
+library(tidyverse)
+dohmh <- read_csv("./raw_data/DOHMH_New_York_City_Restaurant_Inspection_Results.csv")
+head(dohmh)
+
+yelp <- read_csv("./raw_data/full_nyc_restaurants.csv")
+```
+
+Sort by review date and take most recent review
+```{r}
+dohmh <- dohmh %>%
+  arrange(desc(`GRADE DATE`))
+dohmh$duplicated <- duplicated(dohmh$CAMIS)
+
+dohmh_most_recent <- dohmh[dohmh$duplicated == FALSE, ]
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,478 @@
+---
+title: "Yelp Review Visualizaiton"
+author: "Michael Weisner"
+date: "4/24/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# TO DO
+- get mean sentiment per restaurant
+- get sentiment distribution per price and per rating levels
+- map them
+
+## Packages
+```{r}
+library(tidyverse)
+library(dplyr)
+```
+
+## Check This!
+https://rpubs.com/nyombs/yelpTextAnalysis
+
+## Yelp Review Data
+
+```{r}
+review_data <- read_csv("./raw_data/review_merged_data.csv")
+full_review_data <- read_csv("./raw_data/full_review_data.csv")
+```
+
+## Fix Missing Zips
+
+I should do more of this...
+```{r, eval = FALSE}
+library(dplyr)
+missing_review_id <- full_review_data %>%
+  filter(is.na(zip_code)) %>%
+  select(restaurant_name, street_address, city, state, zip_code) %>%
+  unique()
+
+# Snack - 105 Thompson St, New York, NY 10012
+missing_review_id <- missing_review_id %>%
+  mutate(street_address = if_else(restaurant_name == "Snack", "105 Thompson St", street_address)) %>%
+  mutate(city = if_else(restaurant_name == "Snack", "New York", city)) %>%  
+  mutate(state = if_else(restaurant_name == "Snack", "NY", state)) %>%
+  mutate(zip_code = if_else(restaurant_name == "Snack", 10012, zip_code))
+  
+# missing_review_id <- missing_review_id %>%
+#   mutate(street_address = if_else(restaurant_name == "", "", street_address)) %>%
+#   mutate(city = if_else(restaurant_name == "", "", city)) %>%  
+#   mutate(state = if_else(restaurant_name == "", "NY", state)) %>%
+#   mutate(zip_code = if_else(restaurant_name == "", , zip_code))
+```
+
+
+
+## Get Sentiment
+
+Join sentiment to my reviews.
+```{r}
+library(tidytext)
+library(ggplot2)
+library(ggthemes)
+
+review_words <- review_data %>%
+  select(restaurant_name, user_id, rating, price, zip_code, review) %>%
+  unnest_tokens(word, review) %>%
+  filter(!word %in% stop_words$word,
+         str_detect(word, "^[a-z']+$"))
+
+review_words_sentiment <- review_words %>%
+  inner_join(get_sentiments("bing"))
+
+top_sentiment_words <- review_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Top Sentiment Words", 
+       y = "Contribution to sentiment",
+       x = NULL) +
+  coord_flip()  +
+  theme_tufte(ticks = TRUE)
+top_sentiment_words
+```
+
+Initial Thoughts:
+It's an issue that fried is the top negative sentiment word, since that's good for some restaurants. This has some implications to be cautious about as restaurants with fried food may come up as negative when they are not. There could be broader issues, as poorer neighborhoods may have higher fast food restaurants, which could mean more fried food, and thus weight down their sentiment score.
+
+
+## NRC Anger and Joy?
+```{r}
+
+```
+
+
+## Word Cloud of Most Frequent Words by Rating
+
+```{r}
+library(ggwordcloud)
+# review_sentiments_small <- review_words_sentiment %>%
+#   group_by(sentiment) %>%
+#   top_n(25) %>%
+#   ungroup() %>%
+#   count(word, sentiment, sort = TRUE) %>%
+#   mutate(rank = row_number())
+
+review_sentiments_small <- review_words_sentiment %>%
+  group_by(sentiment) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  top_n(40) %>%
+  ungroup()
+  
+
+
+set.seed(2019429)
+review_sentiments_small <- review_sentiments_small %>%
+  mutate(angle = 90 * sample(c(0, 1), n(), replace = TRUE, prob = c(60, 40)))
+# review_sentiments_small$price_fact <- factor(review_sentiments_small$price, levels = "$", "$$", "$$$", "$$$$")
+
+ggplot(review_sentiments_small, aes(
+  label = word, size = n, color = sentiment,
+  angle = angle)) +
+  geom_text_wordcloud_area() +
+  scale_size_area(max_size = 18) +
+  theme_minimal()
+```
+
+This is basically what the graph we had says, we see that the dominant word is delicious, and the worst negative word is fried.
+
+## Words by Price
+
+### Number of Words per Price
+
+```{r}
+require(scales)
+summary(as.factor(review_words$price[!is.na(review_words$price)]))
+words_by_price <- review_words %>%
+  filter(!is.na(price)) %>%
+  inner_join(get_sentiments("bing")) %>%
+  ggplot(aes(x = price)) +
+  geom_bar() +
+  theme_tufte(ticks = TRUE) + 
+  ggtitle("Number of Words per Category") +
+  ylab("Number of Words") +
+  xlab("Price Category") +
+  scale_y_continuous(labels = comma)
+
+words_by_price
+```
+
+### Number of Reviews per Price
+
+```{r}
+detach("package:dplyr")
+library(dplyr)
+
+summary(as.factor(review_data$price[!is.na(review_data$price)]))
+reviews_by_price <- review_data %>%
+  filter(!is.na(price)) %>%
+  ggplot(aes(x = price)) +
+  geom_bar() +
+  theme_tufte(ticks = TRUE) +
+  ggtitle("Number of Reviews per Price Category") +
+  ylab("Number of Reviews") +
+  xlab("Price Category") +
+  scale_y_continuous(labels = comma)
+
+reviews_by_price
+```
+
+### Average Length of Reviews by Price
+
+```{r}
+review_lengths <- review_data %>%
+  mutate(review_length = nchar(review))
+
+review_lengths_agg <- review_lengths %>%
+  select(price, review_length) %>%
+  mutate(price = as.factor(price))
+
+review_lengths_agg <- aggregate(.~price, data = review_lengths_agg, FUN = "mean")
+
+review_length_by_price <- review_lengths_agg %>%
+  filter(!is.na(price)) %>%
+  ggplot(aes(x = price, y = review_length)) +
+  geom_col() +
+  theme_tufte(ticks = TRUE) +
+  ggtitle("Length of Reviews by Price Category") +
+  ylab("Average Length of Reviews") +
+  xlab("Price Category") +
+  scale_y_continuous(labels = comma)
+
+review_length_by_price
+```
+
+### Top Words by Price
+
+```{r}
+
+library(ggpubr)
+
+# top_words_1d <- review_words %>%
+#   filter(price == "$") %>%
+#   inner_join(get_sentiments("bing")) %>%
+#   count(word, sentiment, sort = TRUE) %>%
+#   ungroup() %>%
+#   group_by(sentiment) %>%
+#   top_n(10) %>%
+#   ungroup() %>%
+#   mutate(word = reorder(word, n)) %>%
+#   mutate(price = "$")
+# 
+# top_words_2d <- review_words %>%
+#   filter(price == "$$") %>%
+#   inner_join(get_sentiments("bing")) %>%
+#   count(word, sentiment, sort = TRUE) %>%
+#   ungroup() %>%
+#   group_by(sentiment) %>%
+#   top_n(10) %>%
+#   ungroup() %>%
+#   mutate(word = reorder(word, n)) %>%
+#   mutate(price = "$$")
+# 
+# top_words_3d <- review_words %>%
+#   filter(price == "$$$") %>%
+#   inner_join(get_sentiments("bing")) %>%
+#   count(word, sentiment, sort = TRUE) %>%
+#   ungroup() %>%
+#   group_by(sentiment) %>%
+#   top_n(10) %>%
+#   ungroup() %>%
+#   mutate(word = reorder(word, n)) %>%
+#   mutate(price = "$$$")
+# 
+# top_words_4d <- review_words %>%
+#   filter(price == "$$$$") %>%
+#   inner_join(get_sentiments("bing")) %>%
+#   count(word, sentiment, sort = TRUE) %>%
+#   ungroup() %>%
+#   group_by(sentiment) %>%
+#   top_n(10) %>%
+#   ungroup() %>%
+#   mutate(word = reorder(word, n)) %>%
+#   mutate(price = "$$$$")
+#  
+# top_words_by_price <- rbind(top_words_1d, top_words_2d, top_words_3d, top_words_4d)
+# 
+# ggplot(top_words_by_price, aes(word, n, fill = sentiment)) +
+#   geom_col(show.legend = FALSE, identity = "sentiment") +
+#   facet_wrap(~price, scales = "free_y") +
+#   labs(title = "Top Sentiment Words",
+#        y = "Contribution to sentiment",
+#        x = NULL) +
+#   coord_flip()  +
+#   theme_tufte(ticks = TRUE)
+
+top_words_1d <- review_words %>%
+  filter(price == "$") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  mutate(price = "$") %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Top Sentiment Words for $", 
+       y = "",
+       x = NULL) +
+  coord_flip()  +
+  theme_tufte(ticks = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 8))
+
+top_words_2d <- review_words %>%
+  filter(price == "$$") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  mutate(price = "$$") %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Top Sentiment Words for $$", 
+       y = "",
+       x = NULL) +
+  coord_flip()  +
+  theme_tufte(ticks = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 8))
+
+top_words_3d <- review_words %>%
+  filter(price == "$$$") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  mutate(price = "$$$") %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Top Sentiment Words for $$$", 
+       y = "Contribution to sentiment",
+       x = NULL) +
+  coord_flip()  +
+  theme_tufte(ticks = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 8))
+
+top_words_4d <- review_words %>%
+  filter(price == "$$$$") %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  group_by(sentiment) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  mutate(price = "$$$$") %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Top Sentiment Words for $$$$", 
+       y = "Contribution to sentiment",
+       x = NULL) +
+  coord_flip()  +
+  theme_tufte(ticks = TRUE) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size = 8))
+
+ggarrange(top_words_1d, top_words_2d, top_words_3d, top_words_4d , ncol = 2, nrow = 2)
+```
+
+## Zip Code Geocoding
+
+```{r}
+detach("package:dplyr", unload=TRUE)
+library(dplyr)
+review_words_sent_zip <- review_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(zip_code, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+num_reviews_zip <- review_data %>% 
+  select(zip_code) %>%
+  mutate(total_reviews = 1)
+
+num_reviews_zip <- aggregate(.~ zip_code, num_reviews_zip, FUN = "sum")
+
+review_words_sent_zip <- left_join(review_words_sent_zip, num_reviews_zip)
+
+library(zipcode)
+data(zipcode)
+
+zipcode$zip_code <- as.numeric(zipcode$zip)
+geo_reviews <- inner_join(review_words_sent_zip, zipcode, by = "zip_code")
+
+geo_reviews <- geo_reviews %>%
+  rename(ZIPCODE = zip_code) %>%
+  mutate(avg_sentiment = sentiment / total_reviews)
+``` 
+
+```{r}
+library(raster)
+library(leaflet)
+library(tm)
+library(widgetframe)
+library(rgdal)
+# read data    
+
+p <- readOGR("./raw_data/ZIP_CODE_040114.shp")
+
+# merge on common variable, here called 'key'
+m <- merge(p, geo_reviews, by='ZIPCODE')
+
+# perhaps save as shapefile again
+#shapefile(m, "path/merged.shp")
+
+# nyc_leaf <- leaflet(m, 
+#  leafletOptions(attributionControl = FALSE, minzoom=1.5)) %>% 
+#  setView(lat=40.7128, lng=74.0060 , zoom=4) %>%
+#   addTiles()
+# 
+# frameWidget(nyc_leaf)
+```
+
+```{r}
+library(RColorBrewer)
+# leaflet(m) %>%
+#   addPolygons(color = "#444444", weight = 1, smoothFactor = 0.5,
+#     opacity = 1.0, fillOpacity = 0.5,
+#     fillColor = ~colorQuantile("YlOrRd", sentiment)(m),
+#     highlightOptions = highlightOptions(color = "white", weight = 2,
+#       bringToFront = TRUE))
+
+library(tmap)
+overall_sentiment <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("sentiment", fill.title = "Yelp Review Sentiment by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+total_reviews <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("total_reviews", fill.title = "Total Yelp Reviews by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+positive_review_map <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("positive", fill.title = "Total Positive Yelp Sentiment by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+negative_review_map <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("negative", fill.title = "Total Negative Yelp Sentiment by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+average_sentiment <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("avg_sentiment", fill.title = "Total Negative Yelp Sentiment by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile", title = "Average Sentiment") +
+  tm_layout(legend.bg.color = "white")
+
+total_reviews
+overall_sentiment
+positive_review_map
+negative_review_map
+average_sentiment
+```
+
+## Mean Review Length by Zip Code
+
+```{r}
+
+```
+
+
+## Review Sentiment by Zip Code
+
+```{r}
+
+```
+
+
+## Mean Review Length by Price Level
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+

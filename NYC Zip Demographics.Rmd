@@ -1,0 +1,144 @@
+---
+title: "NYC Zip Demographics"
+author: "Michael Weisner"
+date: "4/30/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Pop Map
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(raster)
+library(leaflet)
+library(tm)
+library(widgetframe)
+library(rgdal)
+library(stringi)
+```
+
+```{r}
+nyc_census_tracts <- read_csv("./raw_data/census/nyc_census_tracts.csv") %>%
+  mutate(CensusTract_char = as.character(CensusTract))
+
+census_zip <- readxl::read_xlsx("./raw_data/census/ZIP_TRACT_032019.xlsx") %>%
+  rename(CensusTract_char = tract) %>%
+  select(CensusTract_char, zip)
+
+full_census <- inner_join(nyc_census_tracts, census_zip)
+
+demographics <- full_census %>%
+  select(CensusTract, CensusTract_char, Men, Women, Borough, TotalPop, Hispanic, White, Black, Native, Asian, Poverty, Unemployment, zip) %>%
+  mutate(Hisp_tot = round(Hispanic / 100 * TotalPop)) %>%
+  mutate(White_tot = round(White / 100 * TotalPop)) %>%
+  mutate(Black_tot = round(Black / 100 * TotalPop)) %>%
+  mutate(Nat_tot = round(Native / 100 * TotalPop)) %>%
+  mutate(Asian_tot = round(Asian / 100 * TotalPop)) %>%
+  mutate(Pov_tot = round(Poverty / 100 * TotalPop)) %>%
+  mutate(Unemployment_tot = round(Unemployment / 100 * TotalPop)) %>%
+  select(zip, TotalPop, Men, Women, Hisp_tot, White_tot, Black_tot, Nat_tot, Asian_tot, Pov_tot, Unemployment_tot)
+
+demographics_agg <- aggregate(.~zip, data = demographics, FUN = "sum")
+```
+
+## Full Zip Percentages
+```{r}
+demographics_agg <- demographics_agg %>%
+  mutate(Men_pct = Men / TotalPop * 100) %>%
+  mutate(Hispanic_pct = Hisp_tot / TotalPop * 100) %>%
+  mutate(White_pct = White_tot / TotalPop * 100) %>%
+  mutate(Black_pct = Black_tot / TotalPop * 100) %>%
+  mutate(Native_pct = Nat_tot / TotalPop * 100) %>%
+  mutate(Asian_pct = Asian_tot / TotalPop * 100) %>%
+  mutate(Poverty_pct = Pov_tot / TotalPop * 100) %>%
+  mutate(Unemployment_pct = Unemployment_tot / TotalPop * 100) %>%
+  rename(ZIPCODE = zip)
+
+#write_csv(demographics_agg, "./Demographics/nyc_zip_demographics.csv")
+```
+
+## Maps of Demographics
+```{r}
+library(raster)
+library(leaflet)
+library(tm)
+library(widgetframe)
+library(rgdal)
+# read data    
+
+p <- readOGR("./raw_data/ZIP_CODE_040114.shp")
+
+# merge on common variable, here called 'key'
+m <- merge(p, demographics_agg, by='ZIPCODE')
+
+library(tmap)
+total_pop <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("TotalPop", fill.title = "Total NYC Population by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+pct_men <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("Men_pct", fill.title = "NYC Percentage of Population are Men by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+pct_white <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("White_pct", fill.title = "NYC Percentage of Population are Men by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+pct_hispanic <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("Hispanic_pct", fill.title = "NYC Percentage of Population are Hispanic by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+pct_black <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("Black_pct", fill.title = "NYC Percentage of Population are Black by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+pct_native <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("Native_pct", fill.title = "NYC Percentage of Population are Native American by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+pct_asian <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("Asian_pct", fill.title = "NYC Percentage of Population are Asian by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+pct_poverty <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("Poverty_pct", fill.title = "NYC Percentage of Population are at or Below the Poverty Line by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+pct_unemployment <- tm_shape(m) + # downloaded images from OSM
+  tm_polygons() +
+  tm_shape(m) +
+  tm_fill("Unemployment_pct", fill.title = "NYC Percentage of Population are Unemployed by Zip Code", scale = 0.8, alpha = 0.5, palette = "GnBu", style = "quantile") +
+  tm_layout(legend.bg.color = "white")
+
+total_pop
+pct_men
+pct_hispanic
+pct_white
+pct_black
+pct_native
+pct_asian
+pct_poverty
+pct_unemployment
+```
+

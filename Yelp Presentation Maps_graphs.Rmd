@@ -1,0 +1,259 @@
+---
+title: "mapping"
+author: "Liz Walters"
+date: "4/25/2019"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(rgdal)
+library(raster)
+
+full_nyc_restaurants_CLEAN <- read.csv("~/Desktop/full_nyc_restaurants_CLEAN.csv")
+
+nyc_shp <- shapefile("~/Desktop/ZIP_CODE_040114/ZIP_CODE_040114.shp")
+
+nyc_zip <- readOGR(dsn=path.expand('~/Desktop/ZIP_CODE_040114'), layer='ZIP_CODE_040114')
+```
+
+```{r}
+
+full_nyc_restaurants_CLEAN <- full_nyc_restaurants_CLEAN %>%
+  rename(ZIPCODE = "zip_code")
+  
+```
+
+```{r}
+require(sp)
+
+m <- merge(nyc_shp, full_nyc_restaurants_CLEAN, by = "ZIPCODE", duplicateGeoms = T)
+
+```
+
+
+```{r}
+library(tmap)
+
+choro_price <- tm_shape(m) +  tm_borders()  + tm_fill("price", title = "Price of Restaurants by Zipcode", palette = "GnBu") + tm_layout(legend.title.size = 1) + tm_layout(title = "Price", title.size = 1)
+
+choro_reviewcount <- tm_shape(m) +  tm_borders()  + tm_fill("review_count", title = "Review Count of Restaurants by Zipcode", palette = "GnBu") + tm_layout(legend.title.size = 1) + tm_layout(title = "Review Count", title.size = 1)
+
+choro_rating <- tm_shape(m) +  tm_borders()  + tm_fill("rating", title = "Review Rating of Restaurants by Zipcode", palette = "GnBu") + tm_layout(legend.title.size = 1) + tm_layout(title = "Review Rating", title.size = 1)
+
+tmap_arrange(choro_price, choro_rating, choro_reviewcount, nrow = 1, ncol = 3)
+```
+
+
+```{r}
+
+content <- paste("Name:",full_nyc_restaurants_CLEAN$name_clean,"<br/>",
+                 "Street Address:",full_nyc_restaurants_CLEAN$street_address,"<br/>",
+                 "City:",full_nyc_restaurants_CLEAN$city,"<br/>",
+                 "Zipcode:",full_nyc_restaurants_CLEAN$ZIPCODE,"<br/>",
+                 "Review Count:",full_nyc_restaurants_CLEAN$review_count,"<br/>",
+                 "Rating:",full_nyc_restaurants_CLEAN$rating,"<br/>",
+                 "Price:",full_nyc_restaurants_CLEAN$price,"<br/>")
+
+#This sets the content for the popups in each of the leaflet graphs. 
+
+```
+
+
+##Restaurant by Review Count 
+
+```{r}
+library(leaflet)
+pal1 = colorNumeric("RdYlBu", domain = m$review_count)
+reviewCount <- leaflet(data = full_nyc_restaurants_CLEAN) %>% 
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite) %>% 
+  addCircles(col = ~pal1(review_count), opacity = 1, popup = content) %>% 
+  addPolygons(data = m, fill = FALSE) %>% 
+  addLegend(pal = pal1, values = ~review_count) %>% 
+  setView(lng = -73.97724, 40.76546, zoom = 11) 
+
+reviewCount
+
+
+```
+
+
+##Restaurants by Review Rating 
+
+
+```{r}
+library(leaflet)
+pal2 = colorNumeric("RdYlBu", domain = m$rating)
+reviewRating <- leaflet(data = full_nyc_restaurants_CLEAN) %>% 
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite) %>% 
+  addCircles(col = ~pal2(rating), opacity = 0.9, popup = content) %>% 
+  addPolygons(data = m, fill = FALSE) %>% 
+  addLegend(pal = pal2, values = ~rating, title = "Review Rating") %>% 
+  setView(lng = -73.97724, 40.76546, zoom = 11)
+
+reviewRating
+```
+
+
+##Restaurants by Price Level 
+
+
+```{r}
+library(leaflet)
+pal3 = colorFactor("GnBu", domain = m$price)
+priceLevel <- leaflet(data = full_nyc_restaurants_CLEAN) %>% 
+  addProviderTiles(providers$OpenStreetMap.BlackAndWhite) %>% 
+  addCircles(col = ~pal3(price), opacity = 0.9, popup = content) %>% 
+  addPolygons(data = m, fill = FALSE) %>% 
+  addLegend(pal = pal3, values = ~price, title = "Price Level ") %>% 
+  setView(lng = -73.97724, 40.76546, zoom = 11) 
+
+priceLevel
+```
+
+```{r}
+pal3 = colorFactor("GnBu", domain = m$price)
+priceLevel <- leaflet(data = full_nyc_restaurants_CLEAN) %>% 
+  addProviderTiles(providers$CartoDB.Positron, group = "CartoDB") %>% 
+  addCircles(col = ~pal3(price), opacity = 0.9, popup = content, group = "Price") %>% 
+  addLegend(pal = pal3, values = ~price, title = "Price Level", group = "Price", position = "topleft") %>% 
+  addCircles(col = ~pal2(rating), opacity = 0.9, popup = content, group = "Ratings") %>% 
+  addLegend(pal = pal2, values = ~rating, title = "Review Rating", group = "Ratings", position = "topleft") %>% 
+  addCircles(col = ~pal1(review_count), opacity = 1, popup = content, group = "Review Count") %>% 
+  addLegend(pal = pal1, values = ~review_count, group = "Review Count", position = "topleft") %>% 
+  addPolygons(data = m, fill = FALSE) %>% 
+  setView(lng = -73.97724, 40.76546, zoom = 11) %>%
+  addLayersControl(
+    baseGroups = c("CartoDB"),
+    overlayGroups = c("Price", "Ratings", "Review Count"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+priceLevel
+
+
+```
+
+
+
+
+##Graphs by Layers
+
+
+```{r}
+
+library(mapview)
+
+sync(priceLevel, reviewRating) #this makes them all synced together with zoom and the mouse. 
+
+latticeView(priceLevel, reviewRating) #This makes them all individually managed. 
+
+```
+
+
+
+#Other Tables
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+blah <- full_nyc_restaurants_CLEAN %>%
+  mutate(rating = case_when(
+    rating %in% c(2.5) ~ 2,
+    rating %in% c(3.5) ~ 3,
+    rating %in% c(4.5) ~ 4,
+    TRUE ~ rating
+  )) %>%
+  select(rating, price) %>%
+  group_by(rating, price) %>%
+  summarize(number = n()) %>%
+  ungroup() %>%
+  filter(is.na(price) == F)
+
+ggplot(blah, aes(fill = price, y = log(number), x = rating)) + geom_bar(position = "dodge", stat = "identity") + scale_fill_brewer(palette = "GnBu") + 
+  labs(title = "Restaurants Grouped by Price and Review Rating", x = "Review Rating (1-5 stars)", y = "log Count of Rating by Price Categories", fill = "Price by $ Categories") + theme_classic()
+```
+
+
+#Regular barplot 
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+nyc <- full_nyc_restaurants_CLEAN %>%
+  select(price, ZIPCODE) %>%
+  group_by(price, ZIPCODE) %>%
+  summarize(number = n()) %>%
+  ungroup() %>%
+  filter(is.na(price) == F, price == "$$$$") %>%
+  arrange(desc(number)) %>%
+  mutate(tally = 1:38) %>%
+  filter(tally < 11)
+
+
+
+ggplot(nyc, aes(fill = price, y = number, x = reorder(as.character(ZIPCODE), number))) + geom_bar(stat = "identity") + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + coord_flip() + scale_fill_brewer(palette = "Set3") + 
+labs(title = "Zipcodes with Highest Number of $$$$ Restaurants", x = "", y = "Number of $$$$ Restaurants", fill = "Price by $ Categories") + theme_classic()
+```
+
+
+#Plot by Icon 
+
+```{r}
+image <- sample("~/Desktop/download-1.png", size=10, replace = TRUE) #creates an image variable for the fork and knife icon 
+```
+
+
+```{r}
+library(ggimage)
+ ggplot(nyc, aes(x=reorder(as.character(ZIPCODE), number), y=number)) +
+    geom_segment( aes(x=reorder(as.character(ZIPCODE), number), xend=reorder(as.character(ZIPCODE), number), y=0, yend=number), color="skyblue", size=1) +
+    geom_point( color="blue", size=4, alpha=0.6) +
+  geom_image(aes(image=image), size=.05) + 
+    theme_light() +
+    coord_flip() +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor.x = element_blank(), 
+      panel.grid.major.x = element_blank(),
+      panel.border = element_blank(),
+      axis.ticks.y = element_blank()
+    ) + labs(title = "Zipcodes with Highest Number of $$$$ Restaurants", x = "", y = "Number of $$$$ Restaurants", fill = "Price by $ Categories") 
+
+```
+
+```{r}
+nyc_cheap <- full_nyc_restaurants_CLEAN %>%
+  select(price, ZIPCODE) %>%
+  group_by(price, ZIPCODE) %>%
+  summarize(number = n()) %>%
+  ungroup() %>%
+  filter(is.na(price) == F, price == "$") %>%
+  arrange(desc(number)) %>%
+  mutate(tally = 1:125) %>%
+  filter(tally < 11)
+
+
+ ggplot(nyc_cheap, aes(x=reorder(as.character(ZIPCODE), number), y=number)) +
+    geom_segment( aes(x=reorder(as.character(ZIPCODE), number), xend=reorder(as.character(ZIPCODE), number), y=0, yend=number), color="skyblue", size=1) +
+    geom_point( color="blue", size=4, alpha=0.6) +
+  geom_image(aes(image=image), size=.05) + 
+    theme_light() +
+    coord_flip() +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor.x = element_blank(), 
+      panel.grid.major.x = element_blank(),
+      panel.border = element_blank(),
+      axis.ticks.y = element_blank()
+    ) + labs(title = "Zipcodes with Highest Number of $ Restaurants", x = "", y = "Number of $ Restaurants", fill = "Price by $ Categories") 
+
+```
+
+
+
+
+
