@@ -1,7 +1,5 @@
-# Group C Yelp Data
-
 ## Title: New York City Restaurant Comparison
-by Chana Messinger, Elizabeth Walters-Parish, and Michael Weisner
+by Chana Messinger, Elizabeth Parish, and Michael Weisner
 
 ### Project Link: http://www.columbia.edu/~mw2931/food_for_thought.html
 
